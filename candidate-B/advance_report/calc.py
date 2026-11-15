@@ -317,8 +317,9 @@ def _contract_notes(r: ContractReport, paid, queued, refunded, first: _Allocatio
                                 f"и возвращён {d(p.refunded_at)} — не учитывается"))
     for p in paid:
         if p.work_id:
-            notes.append(Note(INFO, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} привязан к "
-                                    f"{p.work_id} и засчитан в её цену"))
+            notes.append(Note(WARN, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} привязан к "
+                                    f"{p.work_id} и засчитан в её цену. Подтвердите, что это оплата "
+                                    f"работы, а не компенсация расходов сверх цены"))
     for p in queued:
         target = f" (привязан к {p.work_id})" if p.work_id else ""
         notes.append(Note(INFO, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} в очереди на оплату{target} — "
