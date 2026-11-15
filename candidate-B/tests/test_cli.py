@@ -36,7 +36,7 @@ def test_report_on_real_data(real_data, tmp_path, capsys):
     assert [c["Договор"] for c in contracts] == ["D-1", "D-2", "Итого"]
 
     w14 = next(w for w in works if w["Работа"] == "W-14")
-    assert (w14["Выплачено"], w14["в т.ч. платежами с привязкой"], w14["в т.ч. из платежей без привязки"]) == \
+    assert (w14["Выплачено"], w14["в т.ч. платежами с привязкой"], w14["в т.ч. из общих денег договора"]) == \
            ("100000,00", "15000,00", "85000,00")
     d1 = contracts[0]
     assert (d1["Выплачено"], d1["Осталось оплатить"], d1["В очереди"], d1["Останется после очереди"]) == \
@@ -102,3 +102,21 @@ def test_runs_as_module_with_redirected_output(real_data, tmp_path):
     assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
     text = result.stdout.decode("utf-8")
     assert "Студия «Свет»" in text and "—" in text
+
+
+def test_work_table_total_is_column_sum_when_overpaid(real_data, capsys):
+    # 12.11: по D-2 выплачено 95 000, из них 5 000 — переплата. Итог таблицы — сумма колонки.
+    main([str(real_data), "2026-11-12", "--no-csv"])
+    out = capsys.readouterr().out
+    d2_block = out[out.index("Договор D-2"):out.index("ИТОГИ ПО ДОГОВОРАМ")]
+    total_line = next(line for line in d2_block.splitlines() if line.strip().startswith("Итого"))
+    assert total_line.split()[3:5] == ["90", "000,00"]  # цена
+    assert "90 000,00  90 000,00" in total_line          # цена и выплачено по работам
+    assert "Выплачено по договору: 95 000,00, из них переплата 5 000,00" in d2_block
+
+
+def test_contract_without_works(make_data, capsys):
+    path = make_data(contracts=[{"contract_id": "D-1", "contractor": "X", "amount": "10.00",
+                                 "signed_at": "2026-01-01"}])
+    assert main([str(path), "2026-11-10", "--no-csv"]) == 0
+    assert "Работ по договору нет." in capsys.readouterr().out

@@ -272,3 +272,20 @@ def test_random_datasets_balance_to_the_kopeck(seed):
     # переплата возможна, только если всё, что подлежит оплате, оплачено
     if cr.overpaid:
         assert cr.remaining == 0
+
+
+# --- регрессии по итогам ревизии ---------------------------------------------------
+
+def test_paid_before_created_counts_by_payment_date_and_is_flagged():
+    p = pay("P-1", "60.00", created=date(2026, 2, 1), paid=date(2026, 1, 2))
+    cr = one([work("W-1", "100.00")], [p], as_of=date(2026, 1, 4))
+    assert cr.paid_total == M("60.00")
+    assert any(n.level == WARN and "раньше, чем заведён" in n.text for n in cr.notes)
+
+
+def test_linked_to_cancelled_work_has_no_contradicting_note():
+    works = [work("W-1", "100.00", "cancelled", cancelled=date(2026, 3, 1)), work("W-2", "100.00")]
+    cr = one(works, [pay("P-1", "40.00", work_id="W-1")])
+    texts = [n.text for n in cr.notes]
+    assert not any("засчитан в её цену" in t for t in texts)
+    assert any("не поместились" in t for t in texts)

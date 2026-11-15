@@ -77,18 +77,24 @@ def _render_contract(cr: ContractReport) -> list[str]:
             _money_or_dash(w, w.paid), _money_or_dash(w, w.remaining),
             _money_or_dash(w, w.due_now), _money_or_dash(w, w.queued),
         ])
-    rows.append(["Итого", "без отменённых", "", fmt_ru(cr.price_total), fmt_ru(cr.paid_total),
-                 fmt_ru(cr.remaining), fmt_ru(cr.due_now), fmt_ru(cr.queued_total)])
-    out += ["  " + line for line in _table(header, rows, numeric_from=3)]
+    # Итог строки — сумма колонки; переплата и излишек очереди показаны отдельной строкой ниже.
+    rows.append(["Итого", "без отменённых", "", fmt_ru(cr.price_total), fmt_ru(cr.paid_to_works),
+                 fmt_ru(cr.remaining), fmt_ru(cr.due_now), fmt_ru(cr.queued_to_works)])
+    if cr.works:
+        out += ["  " + line for line in _table(header, rows, numeric_from=3)]
+    else:
+        out.append("  Работ по договору нет.")
 
     out.append(f"  Выплачено по договору: {fmt_ru(cr.paid_total)}"
                + (f", из них переплата {fmt_ru(cr.overpaid)}" if cr.overpaid else "")
                + f". Осталось оплатить: {fmt_ru(cr.remaining)}"
-               + f", после оплаты очереди останется {fmt_ru(cr.remaining_after_queue)}.")
+               + f", после оплаты очереди останется {fmt_ru(cr.remaining_after_queue)}"
+               + (f", излишек очереди {fmt_ru(cr.queued_excess)}" if cr.queued_excess else "")
+               + ".")
     shared = [w for w in cr.works if w.paid_shared]
     if shared:
         parts = ", ".join(f"{w.work.work_id} — {fmt_ru(w.paid_shared)}" for w in shared)
-        out.append(f"  Платежи без привязки разложены так: {parts}.")
+        out.append(f"  Из общих денег договора засчитано: {parts}.")
     for level in (WARN, INFO, LATER):
         notes = [n for n in cr.notes if n.level == level]
         if notes:
@@ -126,7 +132,7 @@ CSV_FORMATS = {
 
 WORK_HEADER = ["Дата отчёта", "Договор", "Подрядчик", "Работа", "Название", "Статус на дату", "Дата статуса",
                "Цена в выгрузке", "Цена к оплате", "Выплачено", "в т.ч. платежами с привязкой",
-               "в т.ч. из платежей без привязки", "Осталось оплатить", "К оплате сейчас", "В очереди",
+               "в т.ч. из общих денег договора", "Осталось оплатить", "К оплате сейчас", "В очереди",
                "Останется после очереди"]
 CONTRACT_HEADER = ["Дата отчёта", "Договор", "Подрядчик", "Сумма договора", "Сумма цен работ",
                    "Отменено работ на", "Цена работ к оплате", "Выплачено", "Выплачено в счёт работ",

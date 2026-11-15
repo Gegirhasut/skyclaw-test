@@ -315,8 +315,13 @@ def _contract_notes(r: ContractReport, paid, queued, refunded, first: _Allocatio
     for p in refunded:
         notes.append(Note(INFO, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} ушёл {d(p.paid_at)} "
                                 f"и возвращён {d(p.refunded_at)} — не учитывается"))
+    cancelled_ids = {w.work.work_id for w in r.works if w.state == CANCELLED}
     for p in paid:
-        if p.work_id:
+        if p.paid_at < p.created_at:
+            notes.append(Note(WARN, f"{p.payment_id} ушёл {d(p.paid_at)} — раньше, чем заведён в учёт "
+                                    f"{d(p.created_at)}; считается выплаченным с даты оплаты. Проверьте даты"))
+        # О привязке к отменённой работе предупреждает примечание о переносе в общие деньги ниже.
+        if p.work_id and p.work_id not in cancelled_ids:
             notes.append(Note(WARN, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} привязан к "
                                     f"{p.work_id} и засчитан в её цену. Подтвердите, что это оплата "
                                     f"работы, а не компенсация расходов сверх цены"))
