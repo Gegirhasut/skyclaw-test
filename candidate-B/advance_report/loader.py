@@ -113,7 +113,7 @@ def _read_rows(path: Path, columns: tuple[str, ...], errors: _Collector) -> list
                 rows.append((where, row))
             return rows
     except UnicodeDecodeError:
-        errors.add(path.name, "файл не в кодировке UTF-8 — пересохраните его как «CSV UTF-8»")
+        errors.add(path.name, "файл не в кодировке UTF-8 — откройте его в Блокноте и сохраните в UTF-8 (не через Excel: он поменяет разделитель и запятые в суммах)")
     except OSError as exc:
         errors.add(path.name, f"не удалось прочитать файл: {exc.strerror or exc}")
     return None

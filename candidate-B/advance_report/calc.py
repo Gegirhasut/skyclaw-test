@@ -328,9 +328,12 @@ def _contract_notes(r: ContractReport, paid, queued, refunded, first: _Allocatio
                                     f"работы, а не компенсация расходов сверх цены"))
     for p in queued:
         target = f" (привязан к {p.work_id})" if p.work_id else ""
-        level = WARN if p.work_id and p.work_id not in cancelled_ids else INFO
-        notes.append(Note(level, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} в очереди на оплату{target} — "
-                                f"в «выплачено» не входит"))
+        flagged = bool(p.work_id) and p.work_id not in cancelled_ids
+        ask = (". Подтвердите, что это оплата работы, а не компенсация расходов сверх цены"
+               if flagged else "")
+        notes.append(Note(WARN if flagged else INFO,
+                          f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} в очереди на оплату{target} — "
+                          f"в «выплачено» не входит{ask}"))
     for p, excess, reason in first.linked_overflow:
         notes.append(Note(WARN, f"{p.payment_id} привязан к {p.work_id}, но {fmt_ru(excess)} из него "
                                 f"не поместились ({reason}) — разложены как общий платёж по договору"))

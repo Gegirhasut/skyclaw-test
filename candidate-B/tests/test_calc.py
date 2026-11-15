@@ -293,7 +293,7 @@ def test_linked_to_cancelled_work_has_no_contradicting_note():
 
 def test_queued_linked_payment_is_flagged():
     cr = one([work("W-1", "100.00")], [pay("P-1", "10.00", "queued", work_id="W-1")])
-    assert any(n.level == WARN and "P-1" in n.text for n in cr.notes)
+    assert any(n.level == WARN and "P-1" in n.text and "Подтвердите" in n.text for n in cr.notes)
 
 
 def test_accepted_then_cancelled_work():
