@@ -1,0 +1,2450 @@
+ ▐▛███▛█   Claude Code v2.1.325
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   D:\Code\games\tz\skyclaw
+
+
+> /remote-control 
+
+> Прочитай candidate-B/README.md и data/FORMAT.md, посмотри данные. Сначала     
+  ничего не пиши в код: выпиши все неоднозначности в данных (платежи без        
+  привязки к работе, возврат, платёж в очереди, отменённая работа, работа и     
+  платёж после даты отчёта, платёж «Материалы» на W-14, переплата по D-2) и по  
+  каждой предложи 2–3 варианта решения. Решать буду я.                          
+  Потом сделаем программу на Python: CLI, на входе папка data и дата, на выходе 
+  отчёт в консоли и CSV. Деньги храним в Decimal или в копейках, без float.     
+  Нужны тесты на pytest, DECISIONS.md, записка бухгалтеру NOTE.md и инструкция  
+  запуска в README. Коммить по шагам в main.                                    
+
+● Bash(cd "D:/Code/games/tz/skyclaw" && git ls-files && echo ---- && cat
+      candidate-B/README.md && echo ---- && cat data/FORMAT.md)
+  ⎿  Error: Exit code 1
+     candidate-B/README.md
+     candidate-B/data/FORMAT.md
+     candidate-B/data/contracts.csv
+     candidate-B/data/payments.csv
+     candidate-B/data/works.csv
+     ----
+     # Тестовое задание: аванс по договору
+
+     Около 2-3 часов. Работа - в Claude Code.
+     … +46 lines (ctrl+o to expand)
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B/data" && for f in FORMAT.md
+      contracts.csv works.csv payments.csv; do echo "==== $f"; cat "$f"; done)
+  ⎿  ==== FORMAT.md
+     # Формат данных
+     … +61 lines (ctrl+o to expand)
+
+● Данные и описание прочитал, в код ничего не писал. Отчёт строю на 10.11.2026.
+
+  Что лежит в данных
+  - D-1 («Свет», договор на 600 000): шесть работ по 100 000. W-11, W-12 и W-14
+    приняты, W-13 отменена, W-15 и W-16 запланированы. Платежи:
+    - P-1, аванс 300 000, оплачен;
+    - P-2, 50 000: ушёл 02.09 и вернулся 10.09;
+    - P-3, 15 000 «Материалы» с привязкой к W-14;
+    - P-4, 150 000 «Остаток», стоит в очереди.
+  - D-2 (Петров, договор на 90 000): работы на 20 000, 30 000 и 40 000. W-23
+    принята только 11.11, уже после даты отчёта. Платежи 45 000, 25 000 и 5 000
+    («Доплата») прошли до 10.11, а P-8 на 20 000 ушёл 12.11. Всего выплачено 95
+    000, это на 5 000 больше договора.
+
+  Неоднозначности и варианты
+
+  1. Как разложить по работам платежи без привязки (главный вопрос бухгалтера)
+  - А) По очереди: сначала платежи с привязкой идут на свои работы. Остаток
+    закрывает принятые работы по дате приёмки, затем запланированные по номеру.
+    ← рекомендую
+  - Б) Пропорционально цене всех работ, которые не отменены.
+  - В) На работы их не раскладывать: в итогах договора показать «аванс, не
+    распределённый по работам».
+
+  Если сначала не учесть привязанные платежи, то при варианте А W-14 получит 115
+  000 при цене 100 000.
+
+  2. Возврат P-2
+  - А) Считать по датам: платёж учитывается в периоде от paid_at до refunded_at,
+    после возврата его нет. На 10.11 это 0. ← рекомендую
+  - Б) Всегда исключать refunded.
+  - В) В отчёте показывать отдельной строкой «выплачено и возвращено» и в
+    «выплачено» не включать.
+
+  3. Платёж в очереди P-4
+  - А) Не считать выплаченным, а показать отдельной колонкой «в очереди», чтобы
+    было видно, сколько останется после него. ← рекомендую
+  - Б) Полностью игнорировать.
+  - В) Считать выплаченным: деньги фактически обещаны.
+
+  Кстати, 150 000 не сходится с понятным остатком. Если вычесть уже выплаченное
+  из цены неотменённых работ (500 000), выходит 185 000 или 200 000, смотря как
+  считать материалы. Это вопрос к бухгалтеру.
+
+  4. Отменённая W-13
+  - А) Исключить из цены. Договорной объём D-1 тогда 500 000, а сумму договора
+    600 000 показать рядом для справки. ← рекомендую
+  - Б) Показать её строкой с ценой 0 и пометкой «отменена». В итогах осталось бы
+    считать от суммы договора 600 000.
+  - В) Учитывать по дате: если cancelled_at позже даты отчёта, на эту дату
+    работа ещё действующая. Это можно совместить с А.
+
+  5. Работа и платёж после даты отчёта (W-23 принята 11.11, P-8 ушёл 12.11)
+  - А) Всё восстанавливать на дату. Платёж учитывается, только если paid_at ≤
+    даты. Работа с completed_at позже даты считается на эту дату
+    запланированной. ← рекомендую
+  - Б) Платежи фильтровать по дате, а статусы работ брать из выгрузки как есть.
+  - В) Брать всё как есть и предупредить, что отчёт на текущую выгрузку.
+
+  Рядом стоит вопрос, что делать с платежом, который заведён до даты, а ушёл
+  после. Здесь такого нет, но правило нужно. Варианты: показывать его как «в
+  очереди» на дату или не показывать вовсе.
+
+  6. «Материалы» P-3 на W-14
+  - А) Это оплата в счёт цены W-14: она уменьшает остаток по работе и по
+    договору. ← рекомендую, потому что это проще и укладывается в сумму договора
+  - Б) Это компенсация расходов сверх цены: в «выплачено по работе» не идёт,
+    показывается отдельной колонкой «прочие расходы».
+  - В) Как А, но с пометкой «требует подтверждения» в отчёте и в записке
+    бухгалтеру.
+
+  7. Переплата по D-2 (95 000 при договоре 90 000)
+
+  На 10.11 её ещё нет: выплачено 75 000. Она появится, если запустить отчёт на
+  12.11 или позже. Лишние 5 000 ровно равны P-7 «Доплата».
+  - А) Работам не давать «выплачено» больше цены, а излишек показать на договоре
+    строкой «переплата». В записке попросить проверить P-7 и P-8 на задвоение.
+    ← рекомендую
+  - Б) Отнести излишек на последнюю работу: «осталось» станет отрицательным.
+  - В) Считать P-7 доплатой вне договора, а не оплатой работ: работы не трогать,
+    показать отдельно.
+
+  8. Что значит «осталось оплатить» (этого пункта не было в твоём списке)
+  - А) Цена минус выплачено по всем неотменённым работам, включая
+    запланированные. Отдельно показать «к оплате сейчас», то есть долг только по
+    принятым работам. ← рекомендую
+  - Б) Только по принятым работам.
+  - В) Только по всем работам, без разбивки.
+
+  Что получится на 10.11 при рекомендованных вариантах
+
+  - D-1: выплачено 315 000, осталось 185 000, в очереди 150 000. W-11 и W-12
+    оплачены полностью, на W-14 приходится 15 000 материалов и 85 000 из аванса,
+    а последние 15 000 уходят авансом на W-15.
+  - D-2: выплачено 75 000. W-21 и W-22 оплачены полностью, W-23 оплачена на 25
+    000 из 40 000.
+
+  Ответь по номерам: буква или свой вариант. После этого начну код в
+  candidate-B/, коммиты будут по шагам в main.
+
+✻ Worked for 1m 2s · done 2:43 PM
+
+> Смотри, это тестовое задание работодатель прислал, поэтому надо сделать       
+  очень-очень хорошо. Постарайся. У тебя нет права на ошибку.                   
+
+● User answered Claude's questions:
+  ⎿  · README требует сдать полный транскрипт через /export. Где делать работу: 
+     в этой сессии или в субагенте middle (по правилу из D:\Code\games)? → В 
+     этой сессии (Recommended)
+     · Кода пока нет: я жду твоих решений по 8 неоднозначностям из прошлого 
+     ответа (раскладка платежей без привязки, возврат P-2, очередь P-4, 
+     отменённая W-13, даты после 10.11, «Материалы» P-3, переплата D-2, смысл 
+     «осталось»). Как решаем? → Все рекомендованные (Recommended)
+
+● Принято: все рекомендованные варианты, работаю здесь. Сначала проверю
+  окружение.
+
+● Bash(cd "D:/Code/games/tz/skyclaw" && python --version && python -m pytest
+      --version; git log --oneline | head; cat .gitignore 2>/dev/null; ls -la;
+      ls -la candidate-…)
+  ⎿  Python 3.12.10
+     C:\Users\35796\AppData\Local\Programs\Python\Python312\python.exe: No
+     module named pytest
+     … +11 lines (ctrl+o to expand)
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && python -m venv .venv &&
+      .venv/Scripts/python -m pip install -q pytest && .venv/Scripts/python -m
+      pytest --version)
+  ⎿  [notice] A new release of pip is available: 25.0.1 -> 26.3
+     [notice] To update, run: D:\Code\games\tz\skyclaw\candidate-B\.venv\Sc
+     ripts\python.exe -m pip install --upgrade pip
+     pytest 9.2.0
+  ⎿  (file diff unavailable for this command)
+  ⎿  (timeout 5m)
+
+● Окружение готово: Python 3.12 и pytest в .venv. Дальше пишу каркас: разбор
+  денег без float, модели и загрузку с проверкой данных. · summary
+
+● Write(candidate-B\.gitignore)
+  ⎿  Wrote 7 lines to candidate-B\.gitignore
+      1 .venv/
+      2 __pycache__/
+      3 *.pyc
+      4 .pytest_cache/
+      5 *.egg-info/
+      6 build/
+      7 report/
+
+● Write(candidate-B\pyproject.toml)
+  ⎿  Wrote 23 lines to candidate-B\pyproject.toml
+       1 [build-system]
+       2 requires = ["setuptools>=61"]
+       3 build-backend = "setuptools.build_meta"
+       4 
+       5 [project]
+       6 name = "advance-report"
+       7 version = "1.0.0"
+       8 description = "Отчёт по авансам и оплатам работ по договорам под
+         рядчиков"
+       9 requires-python = ">=3.10"
+     … +14 lines (ctrl+o to expand)
+
+● Write(candidate-B\requirements-dev.txt)
+  ⎿  Wrote 1 line to candidate-B\requirements-dev.txt
+      1 pytest>=8
+
+● Write(candidate-B\advance_report\__init__.py)
+  ⎿  Wrote 3 lines to candidate-B\advance_report\__init__.py
+      1 """Отчёт по оплате работ по договорам на заданную дату."""
+      2 
+      3 __version__ = "1.0.0"
+
+● Write(candidate-B\advance_report\money.py)
+  ⎿  Wrote 42 lines to candidate-B\advance_report\money.py
+      1 """Деньги: только Decimal с точностью до копейки, никаких float."
+        ""
+      2 
+      3 from __future__ import annotations
+      4 
+      5 import re
+      6 from decimal import Decimal
+      7 
+      8 KOPECK = Decimal("0.01")
+      9 ZERO = Decimal("0.00")
+     … +33 lines (ctrl+o to expand)
+
+● Write(candidate-B\advance_report\models.py)
+  ⎿  Wrote 64 lines to candidate-B\advance_report\models.py
+       1 """Записи выгрузки в том виде, как они лежат в data/*.csv."""
+       2 
+       3 from __future__ import annotations
+       4 
+       5 import re
+       6 from dataclasses import dataclass
+       7 from datetime import date
+       8 from decimal import Decimal
+       9 
+      10 # Статусы работ (works.csv) — на момент выгрузки.
+     … +54 lines (ctrl+o to expand)
+
+● Update(candidate-B\advance_report\models.py)
+  ⎿  Added 4 lines, removed 1 line
+      61  
+      62  def natural_key(identifier: str) -> tuple:
+      63      """'W-9' < 'W-10': сравниваем числа как числа, а не как стр
+          оки."""
+      64 -    return tuple(int(part) if part.isdigit() else part for part
+         - in re.split(r"(\d+)", identifier))                            
+      64 +    return tuple(                                              
+      65 +        (0, int(part), "") if part.isdigit() else (1, 0, part) 
+      66 +        for part in re.split(r"(\d+)", identifier)             
+      67 +    )                                                          
+
+● Write(candidate-B\advance_report\loader.py)
+  ⎿  Wrote 242 lines to candidate-B\advance_report\loader.py
+       1 """Чтение data/*.csv и проверка выгрузки.
+       2 
+       3 Все ошибки собираются в один список и показываются разом: лучше 
+         сразу увидеть
+       4 всё, что не так в выгрузке, чем чинить по одной строке за запуск
+         .
+       5 Неоднозначные данные программа не «чинит» молча — она останавлив
+         ается.
+       6 """
+       7 
+     … +235 lines (ctrl+o to expand)
+
+● Теперь тесты на деньги и загрузку.
+● Write(candidate-B\tests\conftest.py)
+  ⎿  Wrote 43 lines to candidate-B\tests\conftest.py
+      1 from __future__ import annotations
+      2 
+      3 from pathlib import Path
+      4 
+      5 import pytest
+      6 
+      7 from advance_report.loader import CONTRACT_COLUMNS, PAYMENT_COLUM
+        NS, WORK_COLUMNS
+      8 
+      9 REAL_DATA = Path(__file__).resolve().parent.parent / "data"
+     … +34 lines (ctrl+o to expand)
+
+● Write(candidate-B\tests\test_money.py)
+  ⎿  Wrote 46 lines to candidate-B\tests\test_money.py
+       1 from decimal import Decimal
+       2 
+       3 import pytest
+       4 
+       5 from advance_report.money import fmt_csv, fmt_ru, parse_money
+       6 
+       7 
+       8 @pytest.mark.parametrize("text, expected", [
+       9     ("600000.00", Decimal("600000.00")),
+      10     ("15000", Decimal("15000.00")),
+     … +36 lines (ctrl+o to expand)
+
+● Write(candidate-B\tests\test_loader.py)
+  ⎿  Wrote 136 lines to candidate-B\tests\test_loader.py
+      1 from datetime import date
+      2 from decimal import Decimal
+      3 
+      4 import pytest
+      5 
+      6 from advance_report.loader import DataError, load_dataset
+      7 from advance_report.models import natural_key
+      8 
+      9 C1 = {"contract_id": "D-1", "contractor": "Подрядчик, ООО", "amou
+        nt": "1000.00", "signed_at": "2026-01-01"}
+     … +127 lines (ctrl+o to expand)
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -m
+      pytest -q 2>&1 | tail -30)
+  ⎿  ...................................
+        [100%]
+     35 passed in 0.47s
+
+● Все 35 тестов проходят. Делаю первый коммит.
+
+● Bash(cd "D:/Code/games/tz/skyclaw" && git add candidate-B && git status
+      --short && git commit -q -F - <<'EOF'
+      Каркас: деньги в Decimal, загрузка и проверка выгрузки…)
+  ⎿  warning: LF will be replaced by CRLF in candidate-B/README.md.
+     The file will have its original line endings in your working directory
+     warning: LF will be replaced by CRLF in candidate-B/data/FORMAT.md.
+     … +33 lines (ctrl+o to expand)
+
+● Сначала восстанавливаю состояние работ и платежей на дату отчёта: сперва
+  платежи с привязкой, затем общие, а остаток показываю как переплату. Отдельный
+  проход раскладывает очередь, и в коде есть сверка до копейки. · summary
+
+● Write(candidate-B\advance_report\calc.py)
+  ⎿  Wrote 361 lines to candidate-B\advance_report\calc.py
+       1 """Расчёт отчёта на дату.
+       2 
+       3 Порядок расчёта по каждому договору (обоснование — в DECISIONS.m
+         d):
+       4 
+       5 1. Состояние каждой работы и каждого платежа восстанавливается н
+         а дату отчёта
+       6    по датам из выгрузки (статус в выгрузке — «на сейчас», а не н
+         а дату).
+       7 2. Отменённые на дату работы в расчёт не входят: их цена не подл
+     … +355 lines (~14 KB) (ctrl+o to expand)
+
+● Update(candidate-B\advance_report\calc.py)
+  ⎿  Added 2 lines, removed 1 line
+      328      for p, excess, reason in second.linked_overflow:
+      329          notes.append(Note(WARN, f"{p.payment_id} (в очереди) п
+           ривязан к {p.work_id}, но {fmt_ru(excess)} "
+      330                                  f"не помещаются ({reason}) — р
+           азложены как общий платёж"))
+      331 -    if r.paid_total > amount:                                 
+      331 +    if r.paid_total > amount and not r.overpaid:              
+      332 +        # Работы оплачены не сверх цены, но их цены в сумме бо
+          +льше договора.                                                
+      333          notes.append(Note(WARN, f"Выплачено {fmt_ru(r.paid_tot
+           al)} — больше суммы договора {fmt_ru(amount)} "
+      334                                  f"на {fmt_ru(r.paid_total - am
+           ount)}"))
+      335      if r.overpaid:
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && cat >
+      "C:/Users/35796/AppData/Local/Temp/claude/8313b9e33deda875/78ba47c4-0de4-4
+      be2-8d76-9e3a9b748668/scratchpad/pe…)
+  ⎿  Error: Exit code 1
+     ===== 2026-11-10
+     D-1 price 500000.00 paid 315000.00 rem 185000.00 due 0.00 q 150000.00 
+     rem_after_q 35000.00 over 0.00 qex 0.00 ref 50000.00
+        W-11 done 100000.00 paid 0.00 + 100000.00 rem 0.00 due 0.00 q 0.00
+        W-12 done 100000.00 paid 0.00 + 100000.00 rem 0.00 due 0.00 q 0.00
+        W-13 cancelled 0.00 paid 0.00 + 0.00 rem 0.00 due 0.00 q 0.00
+        W-14 done 100000.00 paid 15000.00 + 85000.00 rem 0.00 due 0.00 q 0.00
+        W-15 planned 100000.00 paid 0.00 + 15000.00 rem 85000.00 due 0.00 q 
+     85000.00
+        W-16 planned 100000.00 paid 0.00 + 0.00 rem 100000.00 due 0.00 q 
+     65000.00
+         info Traceback (most recent call last):
+
+     … +7 lines (ctrl+o to expand)
+
+● Python на этой машине падает на кириллице при выводе в файл или пайп (cp1252),
+  поэтому для CLI придётся явно переключать вывод на UTF-8. Перезапускаю с
+  UTF-8. · summary
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && PYTHONIOENCODING=utf-8
+      PYTHONPATH=. .venv/Scripts/python
+      "C:/Users/35796/AppData/Local/Temp/claude/8313b9e33deda875…)
+  ⎿  ===== 2026-11-10
+     D-1 price 500000.00 paid 315000.00 rem 185000.00 due 0.00 q 150000.00
+     rem_after_q 35000.00 over 0.00 qex 0.00 ref 50000.00
+     … +72 lines (ctrl+o to expand)
+
+● Цифры сошлись с ручным расчётом: по D-1 и D-2 остатки и переплата на 10.11 и
+  15.11 совпадают. Примечания я разделю на три группы — «проверить», «пояснения»
+  и «после даты отчёта», чтобы ранние даты не смешивались. · summary
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -
+      <<'EOF'
+      import re, pathlib…)
+  ⎿  50:LATER = "later"  # событие после даты отчёта, на дату не учтено
+     55:    level: str  # WARN / INFO / LATER
+     152:        note = Note(LATER, f"{work.work_id} отменена {d(work.cance
+     … +11 lines (ctrl+o to expand)
+  ⎿  1 file changed (binary, mode only or too large to show)
+
+● Сейчас пишу тесты расчёта: сверка с реальными данными на 10.11, граничные
+  даты, приоритет платежей, отмены, очередь, переплата и рандомизированная
+  проверка до копейки. · summary
+
+● Write(candidate-B\tests\test_calc.py)
+  ⎿  Wrote 274 lines to candidate-B\tests\test_calc.py
+       1 import random
+       2 from datetime import date, timedelta
+       3 from decimal import Decimal
+       4 
+       5 import pytest
+       6 
+       7 from advance_report.calc import (
+       8     CANCELLED, DONE, LATER, PLANNED, WARN, build_report,
+       9 )
+      10 from advance_report.loader import load_dataset
+     … +264 lines (ctrl+o to expand)
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -m
+      pytest -q 2>&1 | tail -30)
+  ⎿  ......................................................................
+     .. [ 20%]
+     ......................................................................
+     … +8 lines (ctrl+o to expand)
+
+● 354 теста проходят. Коммит шага 2.
+
+● Bash(cd "D:/Code/games/tz/skyclaw" && git add candidate-B && git commit -q -F
+      - <<'EOF'
+      Расчёт отчёта на дату: состояние на дату и раскладка платежей…)
+  ⎿  warning: LF will be replaced by CRLF in candidate-B/README.md.
+     The file will have its original line endings in your working directory
+     warning: LF will be replaced by CRLF in candidate-B/data/FORMAT.md.
+     … +7 lines (ctrl+o to expand)
+
+● Шаг 3 — вывод в консоль и CSV, а также CLI: CSV по умолчанию будет под русский
+  Excel (разделитель ;, десятичная запятая, UTF-8 с BOM), а --csv-format plain
+  даст обычный CSV. · summary
+
+● Write(candidate-B\advance_report\report.py)
+  ⎿  Wrote 186 lines to candidate-B\advance_report\report.py
+       1 """Вывод отчёта: таблица в консоль и CSV-файлы."""
+       2 
+       3 from __future__ import annotations
+       4 
+       5 import csv
+       6 from decimal import Decimal
+       7 from pathlib import Path
+       8 
+       9 from .calc import CANCELLED, DONE, INFO, LATER, WARN, ContractRe
+         port, Report, WorkLine, d
+     … +177 lines (ctrl+o to expand)
+
+● Write(candidate-B\advance_report\cli.py)
+  ⎿  Wrote 82 lines to candidate-B\advance_report\cli.py
+      1 """Командная строка: python -m advance_report DATA_DIR DATE."""
+      2 
+      3 from __future__ import annotations
+      4 
+      5 import argparse
+      6 import re
+      7 import sys
+      8 from datetime import date, datetime
+      9 from pathlib import Path
+     … +73 lines (ctrl+o to expand)
+
+● Write(candidate-B\advance_report\__main__.py)
+  ⎿  Wrote 5 lines to candidate-B\advance_report\__main__.py
+      1 import sys
+      2 
+      3 from .cli import main
+      4 
+      5 sys.exit(main())
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -m
+      advance_report data 10.11.2026 --out
+      "C:/Users/35796/AppData/Local/Temp/claude/8313b9e33ded…)  ⎿  ОТЧЁТ ОБ ОПЛАТЕ РАБОТ НА 10.11.2026
+     Суммы в рублях. «Выплачено» — деньги, которые ушли подрядчику к дате о
+     тчёта и не вернулись.
+     … +98 lines (ctrl+o to expand)
+
+● Отчёт в порядке; добавлю две правки: платёж P-3 «Материалы» перенесу в
+  «Проверить» для подтверждения, что это оплата работы, а не компенсация
+  расходов, и поясню в легенде, что цена в скобках — отменённая работа. 
+  · summary
+
+● Update(candidate-B\advance_report\calc.py)
+  ⎿  Added 3 lines, removed 2 lines
+      317                                  f"и возвращён {d(p.refunded_at
+           )} — не учитывается"))
+      318      for p in paid:
+      319          if p.work_id:
+      320 -            notes.append(Note(INFO, f"{p.payment_id} «{p.purpo
+          -se}» {fmt_ru(p.amount)} привязан к "                          
+      321 -                                    f"{p.work_id} и засчитан в
+          - её цену"))                                                   
+      320 +            notes.append(Note(WARN, f"{p.payment_id} «{p.purpo
+          +se}» {fmt_ru(p.amount)} привязан к "                          
+      321 +                                    f"{p.work_id} и засчитан в
+          + её цену. Подтвердите, что это оплата "                       
+      322 +                                    f"работы, а не компенсация
+          + расходов сверх цены"))                                       
+      323      for p in queued:
+      324          target = f" (привязан к {p.work_id})" if p.work_id els
+           e ""
+      325          notes.append(Note(INFO, f"{p.payment_id} «{p.purpose}»
+            {fmt_ru(p.amount)} в очереди на оплату{target} — "
+
+● Update(candidate-B\advance_report\report.py)
+  ⎿  Added 1 line
+      53          f"ОТЧЁТ ОБ ОПЛАТЕ РАБОТ НА {d(report.as_of)}",
+      54          "Суммы в рублях. «Выплачено» — деньги, которые ушли под
+          рядчику к дате отчёта и не вернулись.",
+      55          "«К оплате сейчас» — долг за уже принятые работы. «В оч
+          ереди» — платежи, которые ещё не ушли.",
+      56 +        "Цена в скобках — работа отменена, в итоги не входит.",
+      57          "",
+      58      ]
+      59      for cr in report.contracts:
+
+● Write(candidate-B\tests\test_cli.py)
+  ⎿  Wrote 104 lines to candidate-B\tests\test_cli.py
+       1 import csv
+       2 import os
+       3 import subprocess
+       4 import sys
+       5 from decimal import Decimal
+       6 from pathlib import Path
+       7 
+       8 import pytest
+       9 
+      10 from advance_report.cli import main
+     … +94 lines (ctrl+o to expand)
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -m
+      pytest -q 2>&1 | tail -30)
+  ⎿  ......................................................................
+     .. [ 19%]
+     ......................................................................
+     … +10 lines (ctrl+o to expand)
+
+● Все 365 тестов проходят. Сейчас перенесу вспомогательную функцию в report.py
+  выше места использования, а затем сделаю коммит. · summary
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -
+      <<'EOF'
+      import pathlib…)
+  ⎿  138:_CONTRACT_SUM_KEYS = ["amount", "works_total", "cancelled_total",
+     "price_total", "paid_total", "paid_to_works",
+     143:def _contract_value(cr: ContractReport, key: str) -> Decimal:
+     … +5 lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\advance_report\report.py (+188 -187)
+        1 -"""Вывод отчёта: таблица в консоль и CSV-файлы."""            
+        2 -                                                              
+        3 -from __future__ import annotations                            
+        4 -                                                              
+        5 -import csv                                                    
+        6 -from decimal import Decimal                                   
+        7 -from pathlib import Path                                      
+        8 -                                                              
+        9 -from .calc import CANCELLED, DONE, INFO, LATER, WARN, Contract
+          -Report, Report, WorkLine, d                                   
+       10 -from .money import ZERO, fmt_csv, fmt_ru                      
+       11 -                                                              
+       12 -STATE_LABELS = {DONE: "принята", "planned": "запланирована", C
+          -ANCELLED: "отменена"}                                         
+       13 -NOTE_TITLES = {                                               
+       14 -    WARN: "Проверить",                                        
+       15 -    INFO: "Пояснения",                                        
+       16 -    LATER: "После даты отчёта (в расчёт не вошло)",           
+       17 -}                                                             
+       18 -NOTE_CSV_LABELS = {WARN: "проверить", INFO: "пояснение", LATER
+          -: "после даты отчёта"}                                        
+       19 -                                                              
+       20 -                                                              
+       21 -def state_label(w: WorkLine) -> str:                          
+       22 -    if w.state == DONE:                                       
+       23 -        return f"принята {d(w.completed_at)}"                 
+       24 -    if w.state == CANCELLED:                                  
+       25 -        return f"отменена {d(w.work.cancelled_at)}"           
+       26 -    return STATE_LABELS[w.state]                              
+       27 -                                                              
+       28 -                                                              
+       29 -# --- консоль ------------------------------------------------
+          ---------------------                                          
+       30 -                                                              
+       31 -def _table(header: list[str], rows: list[list[str]], numeric_f
+          -rom: int) -> list[str]:                                       
+       32 -    widths = [max(len(r[i]) for r in [header] + rows) for i in
+          - range(len(header))]                                          
+       33 -                                                              
+       34 -    def line(cells: list[str]) -> str:                        
+       35 -        parts = [c.rjust(widths[i]) if i >= numeric_from else 
+          -c.ljust(widths[i]) for i, c in enumerate(cells)]              
+       36 -        return "  ".join(parts).rstrip()                      
+       37 -                                                              
+       38 -    sep = "  ".join("-" * w for w in widths)                  
+       39 -    out = [line(header), sep]                                 
+       40 -    body, total = (rows[:-1], rows[-1:]) if rows and rows[-1][
+          -0] == "Итого" else (rows, [])                                 
+     … 335 more lines (ctrl+o to expand)
+
+● Bash(cd "D:/Code/games/tz/skyclaw" && git add candidate-B && git commit -q -F
+      - <<'EOF'
+      CLI и вывод: таблица в консоли и три CSV…)
+  ⎿  warning: LF will be replaced by CRLF in candidate-B/README.md.
+     The file will have its original line endings in your working directory
+     warning: LF will be replaced by CRLF in candidate-B/data/FORMAT.md.
+     … +11 lines (ctrl+o to expand)
+
+● Шаг 4 — документы: для каждого решения в DECISIONS.md проверю, как изменится
+  отчёт на 10.11, если выбор окажется неверным, и посчитаю альтернативы
+  скриптом, чтобы не ошибиться в цифрах. · summary
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && cat >
+      "C:/Users/35796/AppData/Local/Temp/claude/8313b9e33deda875/78ba47c4-0de4-4
+      be2-8d76-9e3a9b748668/scratchpad/al…)
+  ⎿  == base
+       D-1 price 500000.00 paid 315000.00 rem 185000.00 due 0.00 after_q 35
+     000.00 over 0.00 {'W-11': '100000.00', 'W-12': '100000.00', 'W-13': '0
+     … +29 lines (ctrl+o to expand)
+
+● Сейчас посчитаю пропорциональный вариант 1Б, чтобы сравнить его с выбранным и
+  проверить точность цифр в документе. · summary
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -
+      <<'EOF'
+      from decimal import Decimal as M, ROUND_HALF_UP…)
+  ⎿  {'W-11': Decimal('61855.67'), 'W-12': Decimal('61855.67'), 'W-14': Dec
+     imal('52577.32'), 'W-15': Decimal('61855.67'), 'W-16': Decimal('61855.
+     67')} W-14 total 67577.32
+     … +3 lines (ctrl+o to expand)
+
+● Write(candidate-B\DECISIONS.md)
+  ⎿  Wrote 143 lines to candidate-B\DECISIONS.md
+       1 # Решения
+       2 
+       3 Бухгалтер недоступен, поэтому там, где данных не хватает, решени
+         я приняты самостоятельно.
+       4 Последствия неверного выбора посчитаны на контрольную дату **10.
+         11.2026**.
+       5 Эталон при принятых решениях выглядит так:
+       6 
+       7 | Договор | Цена работ | Выплачено | Осталось | К оплате сейчас 
+         | В очереди | Останется после очереди |
+     … +136 lines (ctrl+o to expand)
+
+● Write(candidate-B\NOTE.md)
+  ⎿  Wrote 12 lines to candidate-B\NOTE.md
+      1 # Записка бухгалтеру
+      2 
+      3 Отчёт строится на любую дату. По каждой работе в нём видно: цену,
+         сколько выплачено, сколько осталось оплатить и сколько из этого 
+        уже к оплате (работа принята, а деньги не доплачены). Внизу итоги
+         по договорам. Тот же отчёт сохраняется в CSV, файлы открываются 
+        в Excel.
+      4 Платежи без привязки к работе я засчитываю по порядку: сначала за
+         принятые работы по дате приёмки, остаток — авансом за следующие 
+        работы. Платёж в очереди в «выплачено» не входит, он показан отде
+     … +9 lines (ctrl+o to expand)
+
+● Теперь инструкция запуска в README. Задание не трогаю, раздел с решением
+  допишу в конец.
+
+● Update(candidate-B\README.md)
+  ⎿  Added 83 lines
+       45  ## Как сдать
+       46  
+       47  Ссылкой на приватный репозиторий или архивом - туда, откуда по
+           лучили задание. Задание, данные и решение не публикуйте.
+       48 +                                                              
+       49 +---                                                           
+       50 +                                                              
+       51 +# Решение                                                     
+       52 +                                                              
+       53 +| Файл | Что это |                                            
+       54 +|---|---|                                                     
+       55 +| `advance_report/` | программа (CLI на Python) |             
+       56 +| `tests/` | тесты pytest |                                   
+       57 +| `DECISIONS.md` | принятые решения, варианты и последствия не
+          +верного выбора |                                              
+       58 +| `NOTE.md` | записка бухгалтеру |                            
+       59 +                                                              
+       60 +## Как запустить                                              
+       61 +                                                              
+       62 +Нужен Python 3.10 или новее. Внешних зависимостей у программы 
+          +нет. Команды выполняются из папки `candidate-B`.              
+       63 +                                                              
+       64 +```bash                                                       
+       65 +python -m advance_report data 2026-11-10                      
+       66 +```                                                           
+       67 +                                                              
+       68 +Дату можно писать и так: `10.11.2026`. Отчёт печатается в конс
+          +оль, а CSV сохраняются в `./report/`:                         
+       69 +                                                              
+       70 +- `works_2026-11-10.csv` — по каждой работе: статус на дату, ц
+          +ена, выплачено (в том числе по привязке и из общих платежей), 
+          +осталось оплатить, к оплате сейчас, в очереди;                
+       71 +- `contracts_2026-11-10.csv` — итоги по договорам и строка «Ит
+          +ого»;                                                         
+       72 +- `notes_2026-11-10.csv` — примечания: что проверить, пояснени
+          +я к расчёту, события после даты отчёта.                       
+       73 +                                                              
+       74 +Параметры:                                                    
+       75 +                                                              
+       76 +| Параметр | Что делает |                                     
+       77 +|---|---|                                                     
+       78 +| `--out DIR` | папка для CSV (по умолчанию `./report`) |     
+       79 +| `--csv-format excel` | по умолчанию: `;`, десятичная запятая
+          +, UTF-8 с BOM, открывается в русском Excel двойным щелчком |  
+       80 +| `--csv-format plain` | `,` и точка, UTF-8 без BOM, для други
+          +х программ |                                                  
+       81 +| `--no-csv` | только вывод в консоль |                       
+       82 +                                                              
+       83 +Коды выхода:                                                  
+       84 +                                                              
+       85 +| Код | Значение |                                            
+       86 +|---|---|                                                     
+       87 +| `0` | отчёт построен |                                      
+       88 +| `1` | в данных ошибки; печатается полный список, отчёт не ст
+          +роится |                                                      
+       89 +| `2` | неверные аргументы, например некорректная дата |      
+       90 +| `3` | внутренняя ошибка сверки сумм |                       
+       91 +                                                              
+       92 +## Тесты                                                      
+       93 +                                                              
+       94 +```bash                                                       
+       95 +python -m venv .venv                                          
+       96 +# Windows: .venv\Scripts\activate    Linux/macOS: source .venv
+          +/bin/activate                                                 
+       97 +pip install -r requirements-dev.txt                           
+       98 +python -m pytest                                              
+       99 +```                                                           
+      100 +                                                              
+      101 +Что проверяют тесты:                                          
+      102 +                                                              
+      103 +- **эталон на 10.11.2026**: на реальных данных сверяется кажда
+          +я работа и каждый итог, посчитанные вручную;                  
+      104 +- **отчёт на 12.11**: видна переплата по D-2;                 
+      105 +- **окно возврата P-2**;                                      
+      106 +- **границы дат**;                                            
+      107 +- **порядок раскладки** и приоритет платежей с привязкой;     
+      108 +- **отмены, очередь, разбор денег и проверка выгрузки**;      
+      109 +- **CLI и CSV**;                                              
+      110 +- **300 случайных наборов данных**: на них проверяется, что су
+          +ммы сходятся до копейки.                                      
+      111 +                                                              
+      112 +## Как устроен расчёт                                         
+      113 +                                                              
+      114 +Подробно расчёт описан в `DECISIONS.md` и в начале `advance_re
+          +port/calc.py`.                                                
+      115 +                                                              
+      116 +1. Статусы в выгрузке даны «на сейчас», поэтому состояние кажд
+          +ой работы и платежа на дату отчёта восстанавливается по датам 
+          +приёмки, отмены, оплаты и возврата.                           
+      117 +2. Отменённые работы в расчёт не входят. Возвращённые платежи 
+          +не учитываются. Платежи в очереди не считаются выплаченными.  
+      118 +3. Выплаченное раскладывается так:                            
+      119 +   - сначала платёж с привязкой идёт на свою работу;          
+      120 +   - затем общие платежи закрывают принятые работы в порядке д
+          +аты приёмки;                                                  
+      121 +   - потом запланированные по номеру;                         
+      122 +   - излишек — переплата по договору.                         
+      123 +4. Очередь раскладывается так же, поверх выплаченного.        
+      124 +5. Деньги хранятся только в `Decimal` с копейками, float нигде
+          + нет. Расчёт сам проверяет, что «выплачено по работам + перепл
+          +ата = выплачено всего», и без сходящихся сумм отчёт не выдаёт.
+      125 +                                                              
+      126 +## Что можно сделать дальше                                   
+      127 +                                                              
+      128 +- После ответов бухгалтера поправить правила из `DECISIONS.md`
+          +: каждое решение локализовано в одной функции `calc.py`.      
+      129 +- Если появятся договорённости вида «аванс на конкретные работ
+          +ы», добавить в выгрузку явную очерёдность или долю аванса по р
+          +аботе.                                                        
+      130 +- При необходимости обернуть `build_report` в небольшой HTTP-с
+          +ервис. Расчёт от ввода-вывода уже отделён.                    
+
+● Сейчас проверю инструкцию в чистом клоне репозитория: системный Python, новый
+  venv и запуск тестов. · summary
+
+● Bash(cd "D:/Code/games/tz/skyclaw" && git add candidate-B && git commit -q -F
+      - <<'EOF'
+      DECISIONS.md, записка бухгалтеру, инструкция запуска в README…)
+  ⎿  warning: LF will be replaced by CRLF in candidate-B/README.md.
+     The file will have its original line endings in your working directory
+     warning: LF will be replaced by CRLF in candidate-B/data/FORMAT.md.
+     … +22 lines (ctrl+o to expand)
+  ⎿  Shell cwd was reset to D:\Code\games\tz\skyclaw\candidate-B
+  ⎿  (timeout 5m)
+
+● Чистый клон проходит: отчёт, коды выхода и 365 тестов в порядке. Сейчас запущу
+  независимую ревизию расчёта, которая перепроверит данные без моих выводов. 
+  · summary
+
+● middle(Independent review of report code)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+● Код и документы готовы и закоммичены в main в четыре шага. Сейчас в фоне идёт
+  независимая проверка. Когда она закончится, разберу её замечания, исправлю
+  подтверждённые и сообщу итог.
+
+✻ Worked for 10m 17s · done 2:55 PM
+
+> Подожди, что работодатель увидит даже вот это сообщение, которое я сейчас     
+  диктую?                                                                       
+
+● Да. В задании (README, пункт 4) просят полный транскрипт через /export, без
+  правок, и все сессии, если их было несколько. Значит, в нём будет всё, что
+  есть в переписке этой сессии:
+  - твои сообщения, включая это и «у тебя нет права на ошибку»;
+  - мои ответы, выбор вариантов в диалоге и все команды, которые я запускал, с
+    их выводом;
+  - фоновая проверка, которую я сейчас запустил, тоже попадёт в транскрипт.
+
+  Скрыть это, начав новую сессию, не получится: просят все сессии. Вырезать
+  разрешено только ключи и пароли. Я бы и не пытался. Переписка выглядит
+  нормально: ты разобрал неоднозначности, принял решения, работа шла по шагам с
+  тестами. Работодатель, скорее всего, ровно это и хочет увидеть.
+
+  Что именно /export включает кроме переписки (например, служебный контекст
+  сессии), я точно не знаю. Поэтому перед отправкой открой файл и проверь его
+  глазами. Если найдёшь ключи, пароли или личные данные, которые не хочешь
+  передавать, их можно вырезать.
+
+  Фоновая проверка ещё идёт, результат пришлю.
+
+✻ Brewed for 11s · done 2:55 PM
+
+● Agent "Independent review of report code" finished · 1m 42s
+● Ревизия независимо подтвердила все цифры отчёта на 10.11, 12.11 и 05.09 до
+  копейки. Ошибки нашлись в краях, не в эталоне. Проверил каждое замечание: всё
+  подтверждается. Исправляю:
+  1. Платёж, ушедший раньше, чем его завели в учёт, считается выплаченным, но
+     правило 5 в DECISIONS сформулировано иначе. Деньги фактически ушли, поэтому
+     поведение оставляю, добавляю предупреждение и уточняю формулировку
+     правила.
+  2. Для платежа с привязкой к отменённой работе выводятся два противоречащих
+     примечания.
+  3. Строка «Итого» в таблице работ не сходится с колонкой при переплате.
+  4. В варианте 1Б в DECISIONS не совпадают описание и цифры, плюс есть
+     противоречие «итоги не меняются».
+  5. Мелочи: подпись строки про раскладку, пустой договор, «со дня»,
+     формулировка в README.
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && grep -n "привязан к\|for p
+      in paid:\|if p.work_id:\|rows.append(\[\"Итого\"\|Платежи без привязки
+      разложены\|shared…)
+  ⎿  advance_report/calc.py:173:    # paid или refunded: деньги уходили p.p
+     aid_at
+     advance_report/calc.py:174:    if p.paid_at <= as_of:
+     … +17 lines (ctrl+o to expand)
+
+  Read 2 files (ctrl+o to expand)
+
+● Update(candidate-B\advance_report\calc.py)
+  ⎿  Added 6 lines, removed 1 line
+      315      for p in refunded:
+      316          notes.append(Note(INFO, f"{p.payment_id} «{p.purpose}»
+            {fmt_ru(p.amount)} ушёл {d(p.paid_at)} "
+      317                                  f"и возвращён {d(p.refunded_at
+           )} — не учитывается"))
+      318 +    cancelled_ids = {w.work.work_id for w in r.works if w.stat
+          +e == CANCELLED}                                               
+      319      for p in paid:
+      319 -        if p.work_id:                                         
+      320 +        if p.paid_at < p.created_at:                          
+      321 +            notes.append(Note(WARN, f"{p.payment_id} ушёл {d(p
+          +.paid_at)} — раньше, чем заведён в учёт "                     
+      322 +                                    f"{d(p.created_at)}; счита
+          +ется выплаченным с даты оплаты. Проверьте даты"))             
+      323 +        # О привязке к отменённой работе предупреждает примеча
+          +ние о переносе в общие деньги ниже.                           
+      324 +        if p.work_id and p.work_id not in cancelled_ids:      
+      325              notes.append(Note(WARN, f"{p.payment_id} «{p.purpo
+           se}» {fmt_ru(p.amount)} привязан к "
+      326                                      f"{p.work_id} и засчитан в
+            её цену. Подтвердите, что это оплата "
+      327                                      f"работы, а не компенсация
+            расходов сверх цены"))
+
+● Update(candidate-B\advance_report\report.py)
+  ⎿  Added 7 lines, removed 3 lines
+      77              _money_or_dash(w, w.paid), _money_or_dash(w, w.rema
+          ining),
+      78              _money_or_dash(w, w.due_now), _money_or_dash(w, w.q
+          ueued),
+      79          ])
+      80 -    rows.append(["Итого", "без отменённых", "", fmt_ru(cr.price
+         -_total), fmt_ru(cr.paid_total),                                
+      81 -                 fmt_ru(cr.remaining), fmt_ru(cr.due_now), fmt_
+         -ru(cr.queued_total)])                                          
+      82 -    out += ["  " + line for line in _table(header, rows, numeri
+         -c_from=3)]                                                     
+      80 +    # Итог строки — сумма колонки; переплата и излишек очереди 
+         +показаны отдельной строкой ниже.                               
+      81 +    rows.append(["Итого", "без отменённых", "", fmt_ru(cr.price
+         +_total), fmt_ru(cr.paid_to_works),                             
+      82 +                 fmt_ru(cr.remaining), fmt_ru(cr.due_now), fmt_
+         +ru(cr.queued_to_works)])                                       
+      83 +    if cr.works:                                               
+      84 +        out += ["  " + line for line in _table(header, rows, nu
+         +meric_from=3)]                                                 
+      85 +    else:                                                      
+      86 +        out.append("  Работ по договору нет.")                 
+      87  
+      88      out.append(f"  Выплачено по договору: {fmt_ru(cr.paid_total
+          )}"
+      89                 + (f", из них переплата {fmt_ru(cr.overpaid)}" i
+          f cr.overpaid else "")
+
+● Update(candidate-B\advance_report\report.py)
+  ⎿  Added 4 lines, removed 2 lines
+       88      out.append(f"  Выплачено по договору: {fmt_ru(cr.paid_tota
+           l)}"
+       89                 + (f", из них переплата {fmt_ru(cr.overpaid)}" 
+           if cr.overpaid else "")
+       90                 + f". Осталось оплатить: {fmt_ru(cr.remaining)}
+           "
+       91 -               + f", после оплаты очереди останется {fmt_ru(cr
+          -.remaining_after_queue)}.")                                   
+       91 +               + f", после оплаты очереди останется {fmt_ru(cr
+          +.remaining_after_queue)}"                                     
+       92 +               + (f", излишек очереди {fmt_ru(cr.queued_excess
+          +)}" if cr.queued_excess else "")                              
+       93 +               + ".")                                         
+       94      shared = [w for w in cr.works if w.paid_shared]
+       95      if shared:
+       96          parts = ", ".join(f"{w.work.work_id} — {fmt_ru(w.paid_
+           shared)}" for w in shared)
+       95 -        out.append(f"  Платежи без привязки разложены так: {pa
+          -rts}.")                                                       
+       97 +        out.append(f"  Из общих денег договора засчитано: {par
+          +ts}.")                                                        
+       98      for level in (WARN, INFO, LATER):
+       99          notes = [n for n in cr.notes if n.level == level]
+      100          if notes:
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && sed -i 's/"в т.ч. из
+      платежей без привязки"/"в т.ч. из общих денег договора"/'
+      advance_report/report.py tests/test_…)
+  ⎿  advance_report/report.py:97:        out.append(f"  Из общих денег дого
+     вора засчитано: {parts}.")
+     advance_report/report.py:135:               "в т.ч. из общих денег дог
+     … +3 lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\advance_report\report.py (+194 -194)
+        1 -"""Вывод отчёта: таблица в консоль и CSV-файлы."""            
+        2 -                                                              
+        3 -from __future__ import annotations                            
+        4 -                                                              
+        5 -import csv                                                    
+        6 -from decimal import Decimal                                   
+        7 -from pathlib import Path                                      
+        8 -                                                              
+        9 -from .calc import CANCELLED, DONE, INFO, LATER, WARN, Contract
+          -Report, Report, WorkLine, d                                   
+       10 -from .money import ZERO, fmt_csv, fmt_ru                      
+       11 -                                                              
+       12 -STATE_LABELS = {DONE: "принята", "planned": "запланирована", C
+          -ANCELLED: "отменена"}                                         
+       13 -NOTE_TITLES = {                                               
+       14 -    WARN: "Проверить",                                        
+       15 -    INFO: "Пояснения",                                        
+       16 -    LATER: "После даты отчёта (в расчёт не вошло)",           
+       17 -}                                                             
+       18 -NOTE_CSV_LABELS = {WARN: "проверить", INFO: "пояснение", LATER
+          -: "после даты отчёта"}                                        
+       19 -                                                              
+       20 -                                                              
+       21 -def state_label(w: WorkLine) -> str:                          
+       22 -    if w.state == DONE:                                       
+       23 -        return f"принята {d(w.completed_at)}"                 
+       24 -    if w.state == CANCELLED:                                  
+       25 -        return f"отменена {d(w.work.cancelled_at)}"           
+       26 -    return STATE_LABELS[w.state]                              
+       27 -                                                              
+       28 -                                                              
+       29 -# --- консоль ------------------------------------------------
+          ---------------------                                          
+       30 -                                                              
+       31 -def _table(header: list[str], rows: list[list[str]], numeric_f
+          -rom: int) -> list[str]:                                       
+       32 -    widths = [max(len(r[i]) for r in [header] + rows) for i in
+          - range(len(header))]                                          
+       33 -                                                              
+       34 -    def line(cells: list[str]) -> str:                        
+       35 -        parts = [c.rjust(widths[i]) if i >= numeric_from else 
+          -c.ljust(widths[i]) for i, c in enumerate(cells)]              
+       36 -        return "  ".join(parts).rstrip()                      
+       37 -                                                              
+       38 -    sep = "  ".join("-" * w for w in widths)                  
+       39 -    out = [line(header), sep]                                 
+       40 -    body, total = (rows[:-1], rows[-1:]) if rows and rows[-1][
+          -0] == "Итого" else (rows, [])                                 
+     … 348 more lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\tests\test_cli.py (+1 -1)
+      36      assert [c["Договор"] for c in contracts] == ["D-1", "D-2", 
+          "Итого"]
+      37  
+      38      w14 = next(w for w in works if w["Работа"] == "W-14")
+      39 -    assert (w14["Выплачено"], w14["в т.ч. платежами с привязкой
+         -"], w14["в т.ч. из платежей без привязки"]) == \               
+      39 +    assert (w14["Выплачено"], w14["в т.ч. платежами с привязкой
+         +"], w14["в т.ч. из общих денег договора"]) == \                
+      40             ("100000,00", "15000,00", "85000,00")
+      41      d1 = contracts[0]
+      42      assert (d1["Выплачено"], d1["Осталось оплатить"], d1["В оче
+          реди"], d1["Останется после очереди"]) == \
+
+● Добавлю регрессионные тесты на каждое исправление:
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && cat >> tests/test_calc.py
+      <<'EOF'…)
+  ⎿  ......................................................................
+     .. [ 19%]
+     ......................................................................
+     … +10 lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\tests\test_calc.py (+17 -0)
+      272      # переплата возможна, только если всё, что подлежит оплате
+           , оплачено
+      273      if cr.overpaid:
+      274          assert cr.remaining == 0
+      275 +                                                              
+      276 +                                                              
+      277 +# --- регрессии по итогам ревизии ----------------------------
+          +-----------------------                                       
+      278 +                                                              
+      279 +def test_paid_before_created_counts_by_payment_date_and_is_fla
+          +gged():                                                       
+      280 +    p = pay("P-1", "60.00", created=date(2026, 2, 1), paid=dat
+          +e(2026, 1, 2))                                                
+      281 +    cr = one([work("W-1", "100.00")], [p], as_of=date(2026, 1,
+          + 4))                                                          
+      282 +    assert cr.paid_total == M("60.00")                        
+      283 +    assert any(n.level == WARN and "раньше, чем заведён" in n.
+          +text for n in cr.notes)                                       
+      284 +                                                              
+      285 +                                                              
+      286 +def test_linked_to_cancelled_work_has_no_contradicting_note():
+      287 +    works = [work("W-1", "100.00", "cancelled", cancelled=date
+          +(2026, 3, 1)), work("W-2", "100.00")]                         
+      288 +    cr = one(works, [pay("P-1", "40.00", work_id="W-1")])     
+      289 +    texts = [n.text for n in cr.notes]                        
+      290 +    assert not any("засчитан в её цену" in t for t in texts)  
+      291 +    assert any("не поместились" in t for t in texts)          
+  ⎿  Updated candidate-B\tests\test_cli.py (+18 -0)
+      102      assert result.returncode == 0, result.stderr.decode("utf-8
+           ", "replace")
+      103      text = result.stdout.decode("utf-8")
+      104      assert "Студия «Свет»" in text and "—" in text
+      105 +                                                              
+      106 +                                                              
+      107 +def test_work_table_total_is_column_sum_when_overpaid(real_dat
+          +a, capsys):                                                   
+      108 +    # 12.11: по D-2 выплачено 95 000, из них 5 000 — переплата
+          +. Итог таблицы — сумма колонки.                               
+      109 +    main([str(real_data), "2026-11-12", "--no-csv"])          
+      110 +    out = capsys.readouterr().out                             
+      111 +    d2_block = out[out.index("Договор D-2"):out.index("ИТОГИ П
+          +О ДОГОВОРАМ")]                                                
+      112 +    total_line = next(line for line in d2_block.splitlines() i
+          +f line.strip().startswith("Итого"))                           
+      113 +    assert total_line.split()[3:5] == ["90", "000,00"]  # цена
+      114 +    assert "90 000,00  90 000,00" in total_line          # цен
+          +а и выплачено по работам                                      
+      115 +    assert "Выплачено по договору: 95 000,00, из них переплата
+          + 5 000,00" in d2_block                                        
+      116 +                                                              
+      117 +                                                              
+      118 +def test_contract_without_works(make_data, capsys):           
+      119 +    path = make_data(contracts=[{"contract_id": "D-1", "contra
+          +ctor": "X", "amount": "10.00",                                
+      120 +                                 "signed_at": "2026-01-01"}]) 
+      121 +    assert main([str(path), "2026-11-10", "--no-csv"]) == 0   
+      122 +    assert "Работ по договору нет." in capsys.readouterr().out
+
+● Тесты проходят (369). Теперь поправлю документы.
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && grep -n
+      "Пропорционально\|итоги договоров не меняются\|Итоги договоров не
+      меняются\|62%\|с дня возврата\|заведён по…)
+  ⎿  DECISIONS.md:17:- Б. Пропорционально цене всех работ.
+     DECISIONS.md:24:Если выбор неверен, меняется только раскладка по работ
+     ам. Итоги договоров не меняются.
+     … +8 lines (ctrl+o to expand)
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -
+      <<'EOF'
+      import pathlib…)
+  ⎿  warning: LF will be replaced by CRLF in candidate-B/advance_report/rep
+     ort.py.
+     The file will have its original line endings in your working directory
+     … +27 lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\DECISIONS.md (+144 -143)
+        1 -# Решения                                                     
+        2 -                                                              
+        3 -Бухгалтер недоступен, поэтому там, где данных не хватает, реше
+          -ния приняты самостоятельно.                                   
+        4 -Последствия неверного выбора посчитаны на контрольную дату **1
+          -0.11.2026**.                                                  
+        5 -Эталон при принятых решениях выглядит так:                    
+        6 -                                                              
+        7 -| Договор | Цена работ | Выплачено | Осталось | К оплате сейча
+          -с | В очереди | Останется после очереди |                     
+        8 -|---|---:|---:|---:|---:|---:|---:|                           
+        9 -| D-1 | 500 000,00 | 315 000,00 | 185 000,00 | 0,00 | 150 000,
+          -00 | 35 000,00 |                                              
+       10 -| D-2 | 90 000,00 | 75 000,00 | 15 000,00 | 0,00 | 0,00 | 15 0
+          -00,00 |                                                       
+       11 -                                                              
+       12 -## Расчёт                                                     
+       13 -                                                              
+       14 -**1. Как разложить по работам платежи без привязки.** Это глав
+          -ный вопрос бухгалтера: деньги пришли по договору, а ей нужно п
+          -онимать, за что уже рассчитались.                             
+       15 -Варианты:                                                     
+       16 -- А. По очереди. Сначала платежи с привязкой идут на свои рабо
+          -ты. Затем общие деньги закрывают принятые работы в порядке дат
+          -ы приёмки, затем запланированные по номеру.                   
+       17 -- Б. Пропорционально цене всех работ.                         
+       18 -- В. Не раскладывать и показать нераспределённый аванс на уров
+          -не договора.                                                  
+       19 -                                                              
+       20 -Выбрал А. Так обычно и рассчитываются: аванс сначала засчитыва
+          -ется за то, что уже сдано, а остаток уходит вперёд, на следующ
+          -ие работы. Такую раскладку легко проверить руками.            
+       21 -                                                              
+       22 -Привязанные платежи идут первыми намеренно. Иначе общий аванс 
+          -300 000 полностью закрыл бы W-14, и вместе с P-3 по ней было б
+          -ы выплачено 115 000 при цене 100 000.                         
+       23 -                                                              
+       24 -Если выбор неверен, меняется только раскладка по работам. Итог
+          -и договоров не меняются.                                      
+       25 -- При варианте Б каждая работа D-1 оплачена примерно на 62%: W
+          --11, W-12, W-15 и W-16 по 61 855,67, W-14 — 67 577,32. «К опла
+          -те сейчас» по D-1 станет 108 711,34 вместо 0.                 
+       26 -- По D-2 при варианте Б: W-21 16 666,67, W-22 25 000,00, W-23 
+          -33 333,33. «К оплате сейчас» станет 8 333,33.                 
+       27 -- При варианте В пропадут колонки «выплачено» и «осталось» по 
+          -работам, а именно их просит бухгалтер.                        
+       28 -                                                              
+       29 -**2. Возврат P-2.** Варианты:                                 
+       30 -- А. Учитывать по датам: с `paid_at` до `refunded_at` платёж с
+          -читается выплаченным, начиная с дня возврата — нет.           
+       31 -- Б. Всегда исключать.                                        
+       32 -- В. Показывать отдельной строкой.                            
+       33 -                                                              
+       34 -Выбрал А и вывожу пояснение в примечаниях. Отчёт строится на д
+          -ату, а на 05.09 эти 50 000 действительно были у подрядчика. Де
+          -нь возврата считается возвратом.                              
+       35 -Если выбор неверен, на 10.11 ничего не меняется: деньги ушли и
+          - вернулись до этой даты. Разница появится только у отчёта на 0
+          -2.09–09.09: выплачено по D-1 будет 300 000, а не 350 000.     
+       36 -                                                              
+       37 -**3. Платёж в очереди P-4 (150 000).** Варианты:              
+       38 -- А. Не считать выплаченным и показать отдельной колонкой «В о
+          -череди», разложив поверх выплаченного.                        
+       39 -- Б. Игнорировать.                                            
+       40 -- В. Считать выплаченным.                                     
+     … 247 more lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\README.md (+130 -130)
+        1 -# Тестовое задание: аванс по договору                         
+        2 -                                                              
+        3 -Около 2-3 часов. Работа - в Claude Code.                      
+        4 -                                                              
+        5 -## Контекст                                                   
+        6 -                                                              
+        7 -Компания заказывает работы у подрядчиков: съёмки, дизайн. Дого
+          -вор с подрядчиком - это общая сумма на несколько работ. Платим
+          - по договору авансом и остатками, иногда платёж привязан к кон
+          -кретной работе.                                               
+        8 -                                                              
+        9 -Письмо бухгалтера:                                            
+       10 -                                                              
+       11 -> Мне нужен отчёт: по каждой работе - сколько уже выплачено и 
+          -сколько осталось оплатить, и итог по каждому договору. Сейчас 
+          -считаю в таблице руками и путаюсь: платежи по договору ни к ка
+          -кой работе не привязаны, а мне надо понимать, за что мы уже ра
+          -ссчитались. Отчёт нужен на дату, для проверки - на 10.11.2026.
+       12 -                                                              
+       13 -## Что есть                                                   
+       14 -                                                              
+       15 -Папка `data/`: договоры, работы, платежи и описание формата в 
+          -`FORMAT.md`.                                                  
+       16 -                                                              
+       17 -Бухгалтер в отпуске и на связи не будет, других источников, кр
+          -оме `data/`, нет. Где данных не хватает, решите сами и запишит
+          -е допущение в `DECISIONS.md`.                                 
+       18 -                                                              
+       19 -## Что сдать                                                  
+       20 -                                                              
+       21 -1. **Программа** на Python или TypeScript - скрипт, CLI или ма
+          -ленький HTTP-сервис, на ваш выбор. По файлам из `data/` и дате
+          - она строит отчёт:                                            
+       22 -   - по каждой работе: цена, выплачено, осталось оплатить;    
+       23 -   - по каждому договору: итоги.                              
+       24 -                                                              
+       25 -   Напишите, как её запустить: мы запустим сами.              
+       26 -                                                              
+       27 -2. **Файл `DECISIONS.md`** - решения, которые вы приняли по хо
+          -ду работы. По каждому решению коротко:                        
+       28 -   - что решали;                                              
+       29 -   - какие были варианты;                                     
+       30 -   - что выбрали и почему;                                    
+       31 -   - что изменится в отчёте, если выбор окажется неверным.    
+       32 -                                                              
+       33 -   Пример оформления на постороннюю тему:                     
+       34 -                                                              
+       35 -   > **Формат отчёта.** Варианты: таблица в консоли или файл C
+          -SV. Выбрал CSV: его можно открыть в таблице. Если неверно, пом
+          -еняется только вывод, расчёт останется прежним.               
+       36 -                                                              
+       37 -3. **Записка бухгалтеру** на 5-10 строк простым языком: как чи
+          -тать отчёт и что ей нужно подтвердить, когда вернётся.        
+       38 -                                                              
+       39 -4. **Полный транскрипт работы с Claude Code** - экспорт команд
+          -ой `/export`, без правок. Если сессий было несколько - все. Кл
+          -ючи и пароли, если попали в сессию, можно вырезать.           
+       40 -                                                              
+     … 220 more lines (ctrl+o to expand)
+
+● Таблица теперь сходится с колонкой, а переплата выведена отдельной строкой.
+  Запускаю финальный прогон тестов и затем коммит. · summary
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -m
+      pytest -q 2>&1 | tail -1 && cd .. && git add candidate-B && git commit -q
+      -F - <<'EOF'
+      Испр…)
+  ⎿  369 passed in 1.34s
+     warning: LF will be replaced by CRLF in candidate-B/advance_report/rep
+     ort.py.
+     … +13 lines (ctrl+o to expand)
+
+● Программа, тесты и документы готовы и закоммичены в main в пять шагов. Все 369
+  тестов проходят, а с нуля в чистом клоне всё запускается по инструкции из
+  README.
+
+  Отчёт на 10.11.2026:
+
+  ┌──────────┬─────────┬───────────┬──────────┬──────────┬────────────────┐
+  │ Договор  │  Цена   │ Выплачено │ Осталось │    В     │   Останется    │
+  │          │  работ  │           │          │ очереди  │ после очереди  │
+  ├──────────┼─────────┼───────────┼──────────┼──────────┼────────────────┤
+  │ D-1      │    500  │      315  │     185  │     150  │      35 000,00 │
+  │ «Свет»   │  000,00 │    000,00 │   000,00 │   000,00 │                │
+  ├──────────┼─────────┼───────────┼──────────┼──────────┼────────────────┤
+  │ D-2      │     90  │ 75 000,00 │      15  │     0,00 │      15 000,00 │
+  │ Петров   │  000,00 │           │   000,00 │          │                │
+  └──────────┴─────────┴───────────┴──────────┴──────────┴────────────────┘
+
+  Долгов за принятые работы нет ни по одному договору. Если построить отчёт на
+  12.11 или позже, по D-2 появится переплата 5 000.
+
+  Проверка. Отдельный агент без моих выводов пересчитал отчёт вручную на 10.11,
+  12.11 и 05.09, и все суммы совпали до копейки. Ошибок в эталонных цифрах он не
+  нашёл, но нашёл недочёты на краях, они исправлены и закрыты тестами:
+  - в таблице работ строка «Итого» при переплате не совпадала с суммой колонки;
+  - для платежа с привязкой к отменённой работе выводились два противоречащих
+    примечания;
+  - платёж, ушедший раньше, чем его завели в учёт, молча считался выплаченным;
+    теперь он считается так же, но выносится в «Проверить»;
+  - в DECISIONS.md у варианта 1Б не совпадали описание и цифры.
+
+  Что я сознательно оставил как есть:
+  - программа не проверяет даты приёмки и платежей раньше подписания договора;
+  - если строка работы не загрузилась, привязанные к ней платежи дают лишнюю
+    ошибку «работа не найдена».
+
+  Что лежит в candidate-B/:
+  - advance_report/ — сама программа;
+  - tests/ — тесты;
+  - DECISIONS.md — 16 решений, у каждого посчитано, что изменится на 10.11 при
+    другом выборе;
+  - NOTE.md — записка бухгалтеру с пятью вопросами на подтверждение;
+  - раздел «# Решение» в конце README.md — инструкция запуска. Текст задания
+    выше я не менял.
+
+  Запуск из папки candidate-B: python -m advance_report data 10.11.2026.
+
+  Осталось сделать тебе:
+  1. Выполнить /export в этой сессии. Сам я экспорт сделать не могу.
+  2. Просмотреть файл перед отправкой: вырезать можно только ключи и пароли.
+  3. Отправить работодателю приватный репозиторий или архив. Папка .venv в
+     репозиторий не попадает.
+
+✻ Worked for 14m 29s · done 2:58 PM
+
+> Погоди, ты запусти независимого субагента, пусть ревью сделает на уровне      
+  high. И пусть он присылает тебе какие-то недочеты, если он найдет. Все, что   
+  найдет, ты чинишь. Пока все не починишь, все, что действительно важно, не     
+  останавливаешься и просишь его еще раз сделать ревью каждый раз. То есть он   
+  делает ревью, присылает тебе, ты фиксишь. Говоришь ему, сделай ревью еще раз. 
+  Он делает ревью, присылает тебе замечания, ты фиксишь. И так, пока у него     
+  замечание не закончится.                                                      
+
+● Запускаю нового независимого ревьюера на уровне high. Предыдущие выводы ему не
+  передаю, чтобы он смотрел на код свежим взглядом. Цикл такой: он присылает
+  замечания, я чиню, прошу его повторить ревью. Останавливаемся, когда важных
+  замечаний не останется.
+
+● middle(High-effort independent code review)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+● Ревьюер запущен на уровне high и смотрит всё: расчёт, крайние случаи, CLI,
+  CSV, тесты, точность цифр в документах и README. Жду его замечаний, затем буду
+  чинить и повторять ревью по кругу.
+
+✻ Worked for 19s · done 3:00 PM
+
+> Мне после каждого ревью докладывай, а также говори, сколько циклов ревью уже  
+  сделано.                                                                      
+
+● Хорошо. После каждого цикла буду докладывать номер цикла, что нашёл ревьюер и
+  что я починил. Сейчас идёт цикл 1, жду результат.
+
+✻ Brewed for 2s · done 3:01 PM
+
+● Agent "High-effort independent code review" finished · 4m 8s
+
+● Цикл ревью 1 из ?: завершён. Ревьюер вручную пересчитал все цифры в
+  документах, и все совпали. 369 тестов проходят на Python 3.12 и 3.10.
+
+  Важные замечания (3):
+  1. Если CSV сохранён в cp1251 (так часто сохраняет Excel) или --out указывает
+     на файл, программа падает с трейсбэком, а не с понятным сообщением.
+  2. В DECISIONS.md у решений 11, 13 и 16 не хватает частей формата, который
+     требует задание: «варианты» и «что изменится, если неверно».
+  3. В репозитории нет транскрипта. Это делаешь ты через /export; я добавлю в
+     README, куда его положить.
+
+  Мелких замечаний 9: огромная сумма роняет программу, вывод в NUL на Windows
+  падает, каскад лишних ошибок после одной настоящей, неточный заголовок
+  примечаний, длина NOTE.md, названия колонок, чистота кода.
+
+  Чиню всё, включая мелкие.
+
+  Read 2 files (ctrl+o to expand)
+
+● Update(candidate-B\advance_report\loader.py)
+  ⎿  Added 44 lines, removed 24 lines
+       85              self.add(where, f"{column} заполнено ({row[column]
+           .strip()}), но {reason}")
+       86  
+       87  
+       88 -def _read_rows(path: Path, columns: tuple[str, ...], errors: _
+          -Collector) -> list[tuple[str, dict]]:                         
+       88 +def _read_rows(path: Path, columns: tuple[str, ...], errors: _
+          +Collector) -> list[tuple[str, dict]] | None:                  
+       89 +    """Строки файла или None, если файл целиком не читается.""
+          +"                                                             
+       90      if not path.is_file():
+       91          errors.add(path.name, "файл не найден")
+       91 -        return []                                             
+       92 -    # utf-8-sig: выгрузку могли пересохранить в Excel с BOM.  
+       93 -    with path.open(encoding="utf-8-sig", newline="") as fh:   
+       94 -        reader = csv.DictReader(fh)                           
+       95 -        header = reader.fieldnames or []                      
+       96 -        missing = [c for c in columns if c not in header]     
+       97 -        if missing:                                           
+       98 -            errors.add(path.name, f"нет колонок: {', '.join(mi
+          -ssing)}")                                                     
+       99 -            return []                                         
+      100 -        rows = []                                             
+      101 -        for row in reader:                                    
+      102 -            where = f"{path.name}, строка {reader.line_num}"  
+      103 -            if None in row or any(row[c] is None for c in colu
+          -mns):                                                         
+      104 -                errors.add(where, "число полей не совпадает с 
+          -заголовком")                                                  
+      105 -                continue                                      
+      106 -            if not any(v.strip() for v in row.values() if isin
+          -stance(v, str)):                                              
+      107 -                continue  # пустая строка в конце файла       
+      108 -            rows.append((where, row))                         
+      109 -        return rows                                           
+       92 +        return None                                           
+       93 +    try:                                                      
+       94 +        # utf-8-sig: выгрузку могли пересохранить в Excel с BO
+          +M.                                                            
+       95 +        with path.open(encoding="utf-8-sig", newline="") as fh
+          +:                                                             
+       96 +            reader = csv.DictReader(fh)                       
+       97 +            header = reader.fieldnames or []                  
+       98 +            missing = [c for c in columns if c not in header] 
+       99 +            if missing:                                       
+      100 +                hint = ""                                     
+      101 +                if len(header) == 1 and ";" in header[0]:     
+      102 +                    hint = " (похоже, разделитель «;» — нужна 
+          +запятая, как в исходной выгрузке)"                            
+      103 +                errors.add(path.name, f"нет колонок: {', '.joi
+          +n(missing)}{hint}")                                           
+      104 +                return None                                   
+      105 +            rows = []                                         
+      106 +            for row in reader:                                
+      107 +                where = f"{path.name}, строка {reader.line_num
+          +}"                                                            
+      108 +                if None in row or any(row[c] is None for c in 
+          +columns):                                                     
+      109 +                    errors.add(where, "число полей не совпадае
+          +т с заголовком")                                              
+      110 +                    continue                                  
+      111 +                if not any(v.strip() for v in row.values() if 
+          +isinstance(v, str)):                                          
+      112 +                    continue  # пустая строка в конце файла   
+      113 +                rows.append((where, row))                     
+      114 +            return rows                                       
+      115 +    except UnicodeDecodeError:                                
+      116 +        errors.add(path.name, "файл не в кодировке UTF-8 — пер
+          +есохраните его как «CSV UTF-8»")                              
+      117 +    except OSError as exc:                                    
+      118 +        errors.add(path.name, f"не удалось прочитать файл: {ex
+          +c.strerror or exc}")                                          
+      119 +    return None                                               
+      120  
+      121  
+      122  def load_dataset(data_dir: str | Path) -> Dataset:
+     ...
+      125      if not data_dir.is_dir():
+      126          raise DataError([f"{data_dir}: папка с данными не найд
+           ена"])
+      127  
+      118 -    contracts = _load_contracts(_read_rows(data_dir / "contrac
+          -ts.csv", CONTRACT_COLUMNS, errors), errors)                   
+      119 -    works = _load_works(_read_rows(data_dir / "works.csv", WOR
+          -K_COLUMNS, errors), errors)                                   
+      120 -    payments = _load_payments(_read_rows(data_dir / "payments.
+          -csv", PAYMENT_COLUMNS, errors), errors)                       
+      128 +    contract_rows = _read_rows(data_dir / "contracts.csv", CON
+          +TRACT_COLUMNS, errors)                                        
+      129 +    work_rows = _read_rows(data_dir / "works.csv", WORK_COLUMN
+          +S, errors)                                                    
+      130 +    payment_rows = _read_rows(data_dir / "payments.csv", PAYME
+          +NT_COLUMNS, errors)                                           
+      131 +    contract_ids: set[str] = set()                            
+      132 +    work_ids: set[str] = set()                                
+      133 +    contracts = _load_contracts(contract_rows or [], errors, c
+          +ontract_ids)                                                  
+      134 +    works = _load_works(work_rows or [], errors, work_ids)    
+      135 +    payments = _load_payments(payment_rows or [], errors, set(
+          +))                                                            
+      136  
+      122 -    _check_links(contracts, works, payments, errors)          
+      137 +    # Ссылки проверяем только на файлы, которые прочитались: и
+          +наче одна ошибка                                              
+      138 +    # в заголовке дала бы по «не найден» на каждую строку. Ном
+          +ера строк, которые                                            
+      139 +    # не прошли проверку, считаются известными — по ним ошибка
+          + уже выдана.                                                  
+      140 +    _check_links(contracts, works, payments, errors,          
+      141 +                 known_contracts=contract_ids if contract_rows
+          + is not None else None,                                       
+      142 +                 known_works=work_ids if work_rows is not None
+          + else None)                                                   
+      143      if errors.errors:
+      144          raise DataError(errors.errors)
+      145      return Dataset(contracts=contracts, works=works, payments=
+           payments)
+
+  Read 1 file (ctrl+o to expand)
+● Я меняю сигнатуры загрузчиков и проверку ссылок одним скриптом и проверяю, что
+  каждая замена применилась ровно один раз. · summary
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -
+      <<'EOF'
+      import pathlib…)
+  ⎿  <stdin>:49: SyntaxWarning: invalid escape sequence '\d'
+     <stdin>:53: SyntaxWarning: invalid escape sequence '\d'
+     13:_MONEY_RE = re.compile(r"\d{1,15}(?:\.\d{1,2})?")
+     … +15 lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\advance_report\money.py (+43 -42)
+       1 -"""Деньги: только Decimal с точностью до копейки, никаких float
+         -."""                                                           
+       2 -                                                               
+       3 -from __future__ import annotations                             
+       4 -                                                               
+       5 -import re                                                      
+       6 -from decimal import Decimal                                    
+       7 -                                                               
+       8 -KOPECK = Decimal("0.01")                                       
+       9 -ZERO = Decimal("0.00")                                         
+      10 -                                                               
+      11 -# Неотрицательная сумма в рублях: целая часть и не больше двух 
+         -знаков после точки.                                            
+      12 -_MONEY_RE = re.compile(r"\d+(?:\.\d{1,2})?")                   
+      13 -                                                               
+      14 -                                                               
+      15 -def parse_money(text: str) -> Decimal:                         
+      16 -    """Разбирает сумму из выгрузки ("600000.00") в Decimal с ко
+         -пейками.                                                       
+      17 -                                                               
+      18 -    Отказывает во всём, что нельзя прочитать однозначно: пустое
+         - значение,                                                     
+      19 -    минус, больше двух знаков после точки, запятая, пробелы вну
+         -три, экспонента.                                               
+      20 -    """                                                        
+      21 -    value = text.strip()                                       
+      22 -    if not _MONEY_RE.fullmatch(value):                         
+      23 -        raise ValueError(f"некорректная сумма {text!r}: ожидает
+         -ся вида 12345.67")                                             
+      24 -    return Decimal(value).quantize(KOPECK)                     
+      25 -                                                               
+      26 -                                                               
+      27 -def fmt_ru(amount: Decimal) -> str:                            
+      28 -    """Для консоли: 1234567.8 -> '1 234 567,80'."""            
+      29 -    _check(amount)                                             
+      30 -    return f"{amount:,.2f}".replace(",", " ").replace(".", ",")
+      31 -                                                               
+      32 -                                                               
+      33 -def fmt_csv(amount: Decimal, decimal_comma: bool) -> str:      
+      34 -    """Для CSV: без разделителей тысяч, с запятой или точкой.""
+         -"                                                              
+      35 -    _check(amount)                                             
+      36 -    text = f"{amount:.2f}"                                     
+      37 -    return text.replace(".", ",") if decimal_comma else text   
+      38 -                                                               
+      39 -                                                               
+      40 -def _check(amount: Decimal) -> None:                           
+     … 45 more lines (ctrl+o to expand)
+  ⎿  … 1 more file changed
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -
+      <<'EOF'
+      import pathlib, re…)
+  ⎿  Binary file advance_report/__pycache__/calc.cpython-310.pyc matches
+     Binary file advance_report/__pycache__/calc.cpython-312.pyc matches
+     Binary file advance_report/__pycache__/calc.cpython-39.pyc matches
+     … +8 lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\advance_report\calc.py (+20 -18)
+      27      PAY_REFUNDED,
+      28      WORK_CANCELLED,
+      29      WORK_DONE,
+      30 +    WORK_PLANNED,                                              
+      31      Contract,
+      32      Dataset,
+      33      Payment,
+     ...
+      36  )
+      37  from .money import ZERO, fmt_ru
+      38  
+      38 -# Состояния на дату отчёта.                                    
+      39 -DONE = "done"                                                  
+      40 -PLANNED = "planned"                                            
+      41 -CANCELLED = "cancelled"                                        
+      39 +# Состояния работы на дату отчёта — те же значения, что статусы
+         + в выгрузке.                                                   
+      40 +DONE = WORK_DONE                                               
+      41 +PLANNED = WORK_PLANNED                                         
+      42 +CANCELLED = WORK_CANCELLED                                     
+      43  
+      44  PAID = "paid"
+      45  QUEUED = "queued"
+     ...
+      139      contracts: list[ContractReport]
+      140  
+      141  
+      141 -def d(value: date) -> str:                                    
+      142 +def fmt_date(value: date) -> str:                             
+      143      return value.strftime("%d.%m.%Y")
+      144  
+      145  
+     ...
+      150      if work.status == WORK_CANCELLED:
+      151          if work.cancelled_at <= as_of:
+      152              return CANCELLED, None, None
+      152 -        note = Note(LATER, f"{work.work_id} отменена {d(work.c
+          -ancelled_at)} — после даты отчёта, "                          
+      153 +        note = Note(LATER, f"{work.work_id} отменена {fmt_date
+          +(work.cancelled_at)} — после даты отчёта, "                   
+      154                            f"на дату она ещё действует")
+      155          if work.completed_at and work.completed_at <= as_of:
+      156              return DONE, work.completed_at, note
+     ...
+      158      if work.status == WORK_DONE:
+      159          if work.completed_at <= as_of:
+      160              return DONE, work.completed_at, None
+     … 70 more lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\advance_report\money.py (+3 -3)
+       8  KOPECK = Decimal("0.01")
+       9  ZERO = Decimal("0.00")
+      10  
+      11 -# Неотрицательная сумма в рублях: до 15 цифр целой части (до тр
+         -иллиона с запасом)                                             
+      12 -# и не больше двух знаков после точки.                         
+      13 -_MONEY_RE = re.compile(r"\d{1,15}(?:\.\d{1,2})?")              
+      11 +# Неотрицательная сумма в рублях: ASCII-цифры, до 15 цифр целой
+         + части (заведомо больше                                        
+      12 +# любой реальной суммы, и Decimal не переполняется) и не больше
+         + двух знаков после точки.                                      
+      13 +_MONEY_RE = re.compile(r"[0-9]{1,15}(?:\.[0-9]{1,2})?")        
+      14  
+      15  
+      16  def parse_money(text: str) -> Decimal:
+  ⎿  Updated candidate-B\advance_report\report.py (+195 -194)
+        1 -"""Вывод отчёта: таблица в консоль и CSV-файлы."""            
+        2 -                                                              
+        3 -from __future__ import annotations                            
+        4 -                                                              
+        5 -import csv                                                    
+        6 -from decimal import Decimal                                   
+        7 -from pathlib import Path                                      
+        8 -                                                              
+        9 -from .calc import CANCELLED, DONE, INFO, LATER, WARN, Contract
+          -Report, Report, WorkLine, d                                   
+       10 -from .money import ZERO, fmt_csv, fmt_ru                      
+       11 -                                                              
+       12 -STATE_LABELS = {DONE: "принята", "planned": "запланирована", C
+          -ANCELLED: "отменена"}                                         
+       13 -NOTE_TITLES = {                                               
+       14 -    WARN: "Проверить",                                        
+       15 -    INFO: "Пояснения",                                        
+       16 -    LATER: "После даты отчёта (в расчёт не вошло)",           
+       17 -}                                                             
+       18 -NOTE_CSV_LABELS = {WARN: "проверить", INFO: "пояснение", LATER
+          -: "после даты отчёта"}                                        
+       19 -                                                              
+       20 -                                                              
+       21 -def state_label(w: WorkLine) -> str:                          
+       22 -    if w.state == DONE:                                       
+       23 -        return f"принята {d(w.completed_at)}"                 
+       24 -    if w.state == CANCELLED:                                  
+       25 -        return f"отменена {d(w.work.cancelled_at)}"           
+       26 -    return STATE_LABELS[w.state]                              
+       27 -                                                              
+       28 -                                                              
+       29 -# --- консоль ------------------------------------------------
+          ---------------------                                          
+       30 -                                                              
+       31 -def _table(header: list[str], rows: list[list[str]], numeric_f
+          -rom: int) -> list[str]:                                       
+       32 -    widths = [max(len(r[i]) for r in [header] + rows) for i in
+          - range(len(header))]                                          
+       33 -                                                              
+       34 -    def line(cells: list[str]) -> str:                        
+       35 -        parts = [c.rjust(widths[i]) if i >= numeric_from else 
+          -c.ljust(widths[i]) for i, c in enumerate(cells)]              
+       36 -        return "  ".join(parts).rstrip()                      
+       37 -                                                              
+       38 -    sep = "  ".join("-" * w for w in widths)                  
+       39 -    out = [line(header), sep]                                 
+       40 -    body, total = (rows[:-1], rows[-1:]) if rows and rows[-1][
+          -0] == "Итого" else (rows, [])                                 
+     … 349 more lines (ctrl+o to expand)
+
+● Теперь CLI: переключение вывода на UTF-8, которое не зависит от isatty, и
+  понятная ошибка при записи CSV.
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -
+      <<'EOF'
+      import pathlib…)
+  ⎿  E   SyntaxError: unterminated f-string literal (detected at line 78)
+     =========================== short test summary info ==================
+     =========
+     … +4 lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\advance_report\cli.py (+88 -82)
+       1 -"""Командная строка: python -m advance_report DATA_DIR DATE."""
+       2 -                                                               
+       3 -from __future__ import annotations                             
+       4 -                                                               
+       5 -import argparse                                                
+       6 -import re                                                      
+       7 -import sys                                                     
+       8 -from datetime import date, datetime                            
+       9 -from pathlib import Path                                       
+      10 -                                                               
+      11 -from .calc import InvariantError, build_report                 
+      12 -from .loader import DataError, load_dataset                    
+      13 -from .report import CSV_FORMATS, render_console, write_csv     
+      14 -                                                               
+      15 -EXIT_OK, EXIT_DATA, EXIT_USAGE, EXIT_INTERNAL = 0, 1, 2, 3     
+      16 -                                                               
+      17 -                                                               
+      18 -def parse_report_date(text: str) -> date:                      
+      19 -    """ГГГГ-ММ-ДД или ДД.ММ.ГГГГ (как пишет бухгалтер)."""     
+      20 -    value = text.strip()                                       
+      21 -    for pattern, fmt in ((r"\d{4}-\d{2}-\d{2}", "%Y-%m-%d"), (r
+         -"\d{2}\.\d{2}\.\d{4}", "%d.%m.%Y")):                           
+      22 -        if re.fullmatch(pattern, value):                       
+      23 -            try:                                               
+      24 -                return datetime.strptime(value, fmt).date()    
+      25 -            except ValueError:                                 
+      26 -                break                                          
+      27 -    raise argparse.ArgumentTypeError(f"некорректная дата {text!
+         -r}: нужна ГГГГ-ММ-ДД или ДД.ММ.ГГГГ")                          
+      28 -                                                               
+      29 -                                                               
+      30 -def build_parser() -> argparse.ArgumentParser:                 
+      31 -    parser = argparse.ArgumentParser(                          
+      32 -        prog="python -m advance_report",                       
+      33 -        description="Отчёт по работам и договорам: цена, выплач
+         -ено, осталось оплатить — на дату.",                            
+      34 -    )                                                          
+      35 -    parser.add_argument("data_dir", type=Path, help="папка с co
+         -ntracts.csv, works.csv, payments.csv")                         
+      36 -    parser.add_argument("date", type=parse_report_date, help="д
+         -ата отчёта: 2026-11-10 или 10.11.2026")                        
+      37 -    parser.add_argument("--out", type=Path, default=Path("repor
+         -t"),                                                           
+      38 -                        help="куда сохранить CSV (по умолчанию 
+         -./report)")                                                    
+      39 -    parser.add_argument("--csv-format", choices=sorted(CSV_FORM
+         -ATS), default="excel",                                         
+      40 -                        help="excel — «;» и десятичная запятая 
+         -для Excel (по умолчанию); "                                    
+     … 130 more lines (ctrl+o to expand)
+
+● The heredoc turned \n into a real line break. I'll fix it:
+
+● Update(candidate-B\advance_report\cli.py)
+  ⎿  Added 1 line, removed 2 lines
+      75          try:
+      76              paths = write_csv(report, args.out, args.csv_format
+          )
+      77          except OSError as exc:
+      78 -            print(f"                                           
+      79 -Не удалось сохранить CSV в {args.out}: {exc.strerror or exc}", 
+         -file=sys.stderr)                                               
+      78 +            print(f"\nНе удалось сохранить CSV в {args.out}: {e
+         +xc.strerror or exc}", file=sys.stderr)                         
+      79              return EXIT_OUTPUT
+      80          print("\nCSV сохранены:")
+      81          for path in paths:
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -m
+      pytest -q 2>&1 | tail -5)
+  ⎿  ......................................................................
+     .. [ 58%]
+     ......................................................................
+     … +6 lines (ctrl+o to expand)
+
+● Добавлю регрессионные тесты на все исправления этого цикла:
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && cat >> tests/test_loader.py
+      <<'EOF'…)
+  ⎿  ......................................................................
+     .. [ 19%]
+     ......................................................................
+     … +10 lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\tests\test_calc.py (+5 -0)
+      289      texts = [n.text for n in cr.notes]
+      290      assert not any("засчитан в её цену" in t for t in texts)
+      291      assert any("не поместились" in t for t in texts)
+      292 +                                                              
+      293 +                                                              
+      294 +def test_queued_linked_payment_is_flagged():                  
+      295 +    cr = one([work("W-1", "100.00")], [pay("P-1", "10.00", "qu
+          +eued", work_id="W-1")])                                       
+      296 +    assert any(n.level == WARN and "P-1" in n.text for n in cr
+          +.notes)                                                       
+  ⎿  Updated candidate-B\tests\test_cli.py (+17 -0)
+      120                                   "signed_at": "2026-01-01"}])
+      121      assert main([str(path), "2026-11-10", "--no-csv"]) == 0
+      122      assert "Работ по договору нет." in capsys.readouterr().out
+      123 +                                                              
+      124 +                                                              
+      125 +def test_out_pointing_to_file_is_clear_error(real_data, tmp_pa
+          +th, capsys):                                                  
+      126 +    target = tmp_path / "file.txt"                            
+      127 +    target.write_text("x", encoding="utf-8")                  
+      128 +    assert main([str(real_data), "2026-11-10", "--out", str(ta
+          +rget)]) == 4                                                  
+      129 +    assert "Не удалось сохранить CSV" in capsys.readouterr().e
+          +rr                                                            
+      130 +                                                              
+      131 +                                                              
+      132 +def test_output_to_devnull_does_not_crash(real_data, tmp_path)
+          +:                                                             
+      133 +    # На Windows NUL выдаёт себя за терминал — раньше это роня
+          +ло вывод кириллицы.                                           
+      134 +    env = {k: v for k, v in os.environ.items() if k not in ("P
+          +YTHONIOENCODING", "PYTHONUTF8")}                              
+      135 +    result = subprocess.run(                                  
+      136 +        [sys.executable, "-m", "advance_report", str(real_data
+          +), "10.11.2026", "--out", str(tmp_path)],                     
+      137 +        cwd=PROJECT, stdout=subprocess.DEVNULL, stderr=subproc
+          +ess.PIPE, env=env,                                            
+      138 +    )                                                         
+      139 +    assert result.returncode == 0, result.stderr.decode("utf-8
+          +", "replace")                                                 
+  ⎿  Updated candidate-B\tests\test_loader.py (+41 -0)
+      134  def test_natural_key():
+      135      assert sorted(["W-10", "W-9", "W-100", "W-2"], key=natural
+           _key) == ["W-2", "W-9", "W-10", "W-100"]
+      136      assert sorted(["A", "W-1", "1"], key=natural_key)  # разны
+           е форматы не падают
+      137 +                                                              
+      138 +                                                              
+      139 +# --- регрессии ревизии, цикл 1 ------------------------------
+          +---------------------                                         
+      140 +                                                              
+      141 +def test_cp1251_file_gives_clear_error(make_data):            
+      142 +    path = make_data(contracts=[C1])                          
+      143 +    text = (path / "contracts.csv").read_text(encoding="utf-8"
+          +)                                                             
+      144 +    (path / "contracts.csv").write_bytes(text.encode("cp1251")
+          +)                                                             
+      145 +    errors = errors_of(path)                                  
+      146 +    assert any("не в кодировке UTF-8" in e for e in errors)   
+      147 +    assert not any("не найден в contracts.csv" in e for e in e
+          +rrors)  # без каскада                                         
+      148 +                                                              
+      149 +                                                              
+      150 +def test_semicolon_delimiter_hint_without_cascade(make_data): 
+      151 +    path = make_data(                                         
+      152 +        contracts=[C1],                                       
+      153 +        works=[{"work_id": "W-1", "contract_id": "D-1", "price
+          +": "1.00", "status": "planned"}],                             
+      154 +        payments=[{"payment_id": "P-1", "contract_id": "D-1", 
+          +"amount": "1.00", "status": "queued",                         
+      155 +                   "created_at": "2026-01-01"}],              
+      156 +    )                                                         
+      157 +    text = (path / "contracts.csv").read_text(encoding="utf-8"
+          +)                                                             
+      158 +    (path / "contracts.csv").write_text(text.replace(",", ";")
+          +, encoding="utf-8")                                           
+      159 +    errors = errors_of(path)                                  
+      160 +    assert len(errors) == 1 and "разделитель «;»" in errors[0]
+      161 +                                                              
+      162 +                                                              
+      163 +def test_bad_work_row_does_not_cascade_to_payments(make_data):
+      164 +    path = make_data(                                         
+      165 +        contracts=[C1],                                       
+      166 +        works=[{"work_id": "W-1", "contract_id": "D-1", "price
+          +": "abc", "status": "planned"}],                              
+      167 +        payments=[{"payment_id": f"P-{i}", "contract_id": "D-1
+          +", "work_id": "W-1", "amount": "1.00",                        
+      168 +                   "status": "queued", "created_at": "2026-01-
+          +01"} for i in range(3)],                                      
+      169 +    )                                                         
+      170 +    errors = errors_of(path)                                  
+      171 +    assert len(errors) == 1 and "price" in errors[0]          
+      172 +                                                              
+      173 +                                                              
+     … 4 more lines (ctrl+o to expand)
+
+● Проверю, что новый тест на NUL действительно ловит старую ошибку: прогоню его
+  на коде из прошлого коммита.
+
+● Bash(S="C:/Users/35796/AppData/Local/Temp/claude/8313b9e33deda875/78ba47c4-0de
+      4-4be2-8d76-9e3a9b748668/scratchpad/clone/candidate-B"; cd "$S" && git
+      pull -q 2>/dev/n…)
+  ⎿  b5a5f24 Исправления по итогам ревизии
+     old code exit 1 ^^^^^^^^^^
+     UnicodeEncodeError: 'charmap' codec can't encode characters in positio
+     n 0-4: character maps to <undefined>
+  ⎿  Shell cwd was reset to D:\Code\games\tz\skyclaw\candidate-B
+
+● Тест ловит старую ошибку, значит проверяет то, что нужно. Теперь документы.
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -
+      <<'PYEOF'
+      import pathlib…)
+  ⎿  14:**1. Как разложить по работам платежи без привязки.** Это главный в
+     опрос бухгалтера: деньги пришли по договору, а ей нужно понимать, за ч
+     то уже рассчитались.
+     … +14 lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\DECISIONS.md (+27 -11)
+      106  - остановиться с ошибкой.
+      107  
+      108  Выбрал второй: деньги по договору ушли, и логично зачесть их з
+           а другие работы этого договора. Это выводится в «Проверить».
+      109 -Если выбор неверен, меняется раскладка внутри договора, а итог
+          -и нет. На текущих данных ни на что не влияет.                 
+      109 +Если выбор неверен, меняется раскладка внутри договора и, возм
+          +ожно, «к оплате сейчас»; «выплачено» и «осталось» по договору 
+          +остаются прежними. На текущих данных ни на что не влияет: таки
+          +х платежей нет.                                               
+      110  
+      111  **10. Сумма договора не равна сумме цен работ.** Варианты:
+      112  - считать от суммы договора;
+     ...
+      115  Выбрал цены работ: бухгалтеру нужен расчёт по работам, а итоги
+            сходятся только так. Расхождение выводится в «Проверить». Сей
+           час суммы совпадают: 600 000 и 90 000.
+      116  Если выбор неверен, поменяется только итог «Осталось» по догов
+           ору.
+      117  
+      118 -**11. Порядок раскладки при одинаковой дате приёмки и для запл
+          -анированных работ.** Используется «естественный» порядок номер
+          -ов: W-9 раньше W-10. Других признаков очерёдности в данных нет
+          -.                                                             
+      119 -Если выбор неверен, меняется только то, на какую из двух сосед
+          -них работ попадёт остаток аванса.                             
+      118 +**11. Порядок раскладки при одинаковой дате приёмки и для запл
+          +анированных работ.** Варианты:                                
+      119 +- порядок строк в файле;                                      
+      120 +- номер как текст (тогда W-10 раньше W-9);                    
+      121 +- номер в «естественном» порядке (W-9 раньше W-10).           
+      122 +                                                              
+      123 +Выбрал естественный порядок номеров: других признаков очерёдно
+          +сти в данных нет, а порядок строк выгрузки может меняться от р
+          +аза к разу.                                                   
+      124 +Если выбор неверен, меняется только то, на какую из соседних р
+          +абот попадёт остаток аванса. Итоги договора не меняются. На те
+          +кущих данных результат одинаковый при любом варианте.         
+      125 +                                                              
+      126 +**12. Отменённая работа, которую до этого приняли** (`cancelle
+          +d` и заполнены обе даты). Варианты:                           
+      127 +- считать ошибкой данных;                                     
+      128 +- принять: до даты отмены работа «принята», с даты отмены — «о
+          +тменена».                                                     
+      129 +                                                              
+      130 +Выбрал второй: так бывает (работу приняли, потом от неё отказа
+          +лись), а противоречия в датах нет. Если `completed_at` позже `
+          +cancelled_at` — это ошибка данных.                            
+      131 +Если выбор неверен, такая строка остановит отчёт вместо расчёт
+          +а. На текущих данных таких работ нет.                         
+      132  
+      133  ## Техника
+      134  
+      123 -**12. Язык и форма.**                                         
+      135 +**13. Язык и форма.**                                         
+      136  - Варианты: Python или TypeScript; скрипт, CLI или HTTP-сервис
+           .
+      137  - Выбрал CLI на Python 3.10+ без внешних зависимостей, тесты н
+           а pytest. Это проще всего запустить у себя.
+      138  - Если неверно, расчёт (`calc.py`) отделён от ввода-вывода, та
+           к что HTTP-обёртка займёт час.
+      139  
+      128 -**13. Деньги.**                                               
+      129 -- Варианты: копейки в `int` или `Decimal`.                    
+      130 -- Выбрал `Decimal` с точностью до копейки. Суммы читаются регу
+          -лярным выражением: целые рубли и не больше двух знаков после т
+          -очки, иначе ошибка, никакого float. Форматирование отказываетс
+          -я принимать float.                                            
+      140 +**14. Деньги.**                                               
+     … 24 more lines (ctrl+o to expand)
+
+● Перепишу NOTE.md короче, чтобы она и на экране укладывалась в 5–10 строк:
+
+● Write(candidate-B\NOTE.md)
+  ⎿  Added 9 lines, removed 9 lines
+       1  # Записка бухгалтеру
+       2  
+       3 -Отчёт строится на любую дату. По каждой работе в нём видно: цен
+         -у, сколько выплачено, сколько осталось оплатить и сколько из эт
+         -ого уже к оплате (работа принята, а деньги не доплачены). Внизу
+         - итоги по договорам. Тот же отчёт сохраняется в CSV, файлы откр
+         -ываются в Excel.                                               
+       4 -Платежи без привязки к работе я засчитываю по порядку: сначала 
+         -за принятые работы по дате приёмки, остаток — авансом за следую
+         -щие работы. Платёж в очереди в «выплачено» не входит, он показа
+         -н отдельно. Возвращённый платёж не учитывается. Всё, что случил
+         -ось после даты отчёта, в расчёт не входит и перечислено отдельн
+         -о.                                                             
+       5 -На 10.11.2026 по «Свету» выплачено 315 000, осталось 185 000. П
+         -о Петрову выплачено 75 000, осталось 15 000. Долгов за принятые
+         - работы нет.                                                   
+       3 +По каждой работе в отчёте: цена, сколько выплачено, сколько ост
+         +алось и сколько уже к оплате (работа принята, а деньги не допла
+         +чены). Внизу — итоги по договорам. Те же данные лежат в CSV для
+         + Excel.                                                        
+       4 +Платежи без привязки я засчитываю сначала за принятые работы по
+         + дате приёмки, остаток — авансом за следующие. Очередь в «выпла
+         +чено» не входит. Возвраты не учитываются. События после даты от
+         +чёта перечислены отдельно.                                     
+       5 +На 10.11.2026: «Свет» — выплачено 315 000, осталось 185 000; Пе
+         +тров — выплачено 75 000, осталось 15 000. Долгов за принятые ра
+         +боты нет.                                                      
+       6  
+       7 -Когда вернётесь, подтвердите, пожалуйста:                      
+       8 -1. Платёж без привязки засчитывается сначала за принятые работы
+         -, верно? Или с подрядчиками договаривались иначе, например «ава
+         -нс 50% на каждую работу»?                                      
+       9 -2. P-3 «Материалы для съёмки» 15 000 (W-14) — оплата съёмки, а 
+         -не компенсация расходов сверх цены? Сейчас платёж засчитан в це
+         -ну.                                                            
+      10 -3. Отменённую W-13 на 100 000 не платим? Тогда по «Свету» к опл
+         -ате 500 000, а не 600 000 по договору.                         
+      11 -4. P-4 «Остаток» 150 000 стоит в очереди. После него по «Свету»
+         - останется 35 000 за W-16. Сумма платежа правильная?           
+      12 -5. По Петрову с 12.11 выплачено 95 000 при договоре 90 000, пер
+         -еплата 5 000. Это P-7 «Доплата» сверх договора или P-8 «Остаток
+         -» лишний?                                                      
+       7 +Пожалуйста, подтвердите:                                       
+       8 +1. Засчитывать общие платежи сначала за принятые работы — верно
+         +, или договаривались иначе (например, 50% на каждую)?          
+       9 +2. P-3 «Материалы» 15 000 по W-14 — это оплата съёмки, а не ком
+         +пенсация сверх цены?                                           
+      10 +3. Отменённую W-13 (100 000) не платим, и по «Свету» к оплате 5
+         +00 000, а не 600 000?                                          
+      11 +4. После P-4 «Остаток» 150 000 по «Свету» останется 35 000 за W
+         +-16 — сумма платежа верная?                                    
+      12 +5. По Петрову с 12.11 переплата 5 000: P-7 «Доплата» сверх дого
+         +вора или лишний P-8?                                           
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && grep -n "python
+      -m\|Код\|\`3\`\|README\|Тесты\|^| \`" README.md | sed -n '1,60p' | grep -v
+      "^.*Тестовое" | tail -25)
+  ⎿  55:| `advance_report/` | программа (CLI на Python) |
+     56:| `tests/` | тесты pytest |
+     57:| `DECISIONS.md` | принятые решения, варианты и последствия неверно
+     … +19 lines (ctrl+o to expand)
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && .venv/Scripts/python -
+      <<'PYEOF'
+      import pathlib…)
+  ⎿  ...................
+        [100%]
+     379 passed in 1.83s
+     … +39 lines (ctrl+o to expand)
+  ⎿  Updated candidate-B\README.md (+3 -0)
+      56  | `tests/` | тесты pytest |
+      57  | `DECISIONS.md` | принятые решения, варианты и последствия нев
+          ерного выбора |
+      58  | `NOTE.md` | записка бухгалтеру |
+      59 +| `transcripts/` | транскрипт работы с Claude Code (`/export`) 
+         +|                                                              
+      60  
+      61  ## Как запустить
+      62  
+      63  Нужен Python 3.10 или новее. Внешних зависимостей у программы н
+          ет. Команды выполняются из папки `candidate-B`.
+      64 +Если команда `python` у вас называется иначе — на macOS и Linux
+         + обычно `python3`, на Windows может быть `py` — подставьте её. 
+      65  
+      66  ```bash
+      67  python -m advance_report data 2026-11-10
+     ...
+      90  | `1` | в данных ошибки; печатается полный список, отчёт не стр
+          оится |
+      91  | `2` | неверные аргументы, например некорректная дата |
+      92  | `3` | внутренняя ошибка сверки сумм |
+      93 +| `4` | не удалось сохранить CSV (например, `--out` указывает н
+         +а файл) |                                                      
+      94  
+      95  ## Тесты
+      96  
+  ⎿  Updated candidate-B\tests\test_calc.py (+8 -0)
+      294  def test_queued_linked_payment_is_flagged():
+      295      cr = one([work("W-1", "100.00")], [pay("P-1", "10.00", "qu
+           eued", work_id="W-1")])
+      296      assert any(n.level == WARN and "P-1" in n.text for n in cr
+           .notes)
+      297 +                                                              
+      298 +                                                              
+      299 +def test_accepted_then_cancelled_work():                      
+      300 +    w = work("W-1", "100.00", "cancelled", completed=date(2026
+          +, 3, 1), cancelled=date(2026, 4, 1))                          
+      301 +    before = one([w], [], as_of=date(2026, 3, 15)).works[0]   
+      302 +    after = one([w], [], as_of=date(2026, 4, 1)).works[0]     
+      303 +    assert (before.state, before.due_now) == (DONE, M("100.00"
+          +))                                                            
+      304 +    assert (after.state, after.price) == (CANCELLED, M("0.00")
+          +)                                                             
+
+● Вывод не изменился, тестов стало 379, все проходят. Коммичу и отправляю
+  ревьюеру на повторную проверку.
+
+● Bash(cd "D:/Code/games/tz/skyclaw" && git add candidate-B && git commit -q -F
+      - <<'EOF'
+      Ревизия, цикл 1: устойчивость к кривым файлам, формат DECISIONS, мелочи…)
+  ⎿  warning: LF will be replaced by CRLF in candidate-B/NOTE.md.
+     The file will have its original line endings in your working directory
+     warning: LF will be replaced by CRLF in candidate-B/data/FORMAT.md.
+     … +11 lines (ctrl+o to expand)
+  ⎿  Resuming agent a6f01f6
+
+● Починил все замечания цикла 1 и закоммитил. Тестов теперь 379, все проходят.
+  Ревьюер начал цикл 2.
+
+  Что исправлено:
+  - Кривые файлы. Если файл не в UTF-8, в нём разделитель ; или его не удаётся
+    прочитать, программа выдаёт понятную ошибку без трейсбэка и без каскада
+    повторных ошибок.
+  - Ошибка записи CSV. Например, когда --out указывает на файл, программа выдаёт
+    сообщение и код выхода 4.
+  - Вывод в NUL. Теперь не падает. Отдельно проверил на старом коде, что новый
+    тест действительно ловил эту ошибку.
+  - DECISIONS.md. У каждого решения есть все части формата, которого требует
+    задание: варианты, выбор и почему, что изменится, если выбор неверен.
+    Добавил правило для работы, которую приняли, а потом отменили.
+  - NOTE.md. Сократил, теперь и на экране около 10 строк.
+  - README. Добавил строку про python3/py и код выхода 4.
+  - Мелочи в коде и формулировках. Тоже поправил.
+
+  Транскрипт за тебя я сделать не могу. После завершения выполни /export и
+  положи файл в candidate-B/transcripts/: README уже указывает эту папку.
+
+  Когда придёт результат цикла 2, доложу.
+
+✻ Cooked for 3m 16s · done 3:07 PM
+● Agent "High-effort independent code review" finished · 1m 20s
+
+● Цикл ревью 2: завершён. Важных замечаний нет. Ревьюер повторил все свои
+  примеры из цикла 1: все исправления работают, регрессий нет, 379 тестов
+  проходят.
+
+  Осталось 5 мелких:
+  1. В DECISIONS №9 неверно описано последствие для первого варианта.
+  2. В DECISIONS №14 сказано «меняется только money.py». На самом деле затронуты
+     ещё типы сумм в моделях.
+  3. Предупреждение о платеже в очереди с привязкой ни о чём не просит.
+  4. В NOTE.md назначение платежа процитировано не полностью: «Материалы» вместо
+     «Материалы для съёмки».
+  5. Подсказка «пересохраните как CSV UTF-8» заведёт в новую ошибку: Excel
+     сохранит файл с ; и запятыми в числах.
+
+  Это быстрые правки, чиню и все пять.
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && grep -n "в очереди на
+      оплату" advance_report/calc.py && .venv/Scripts/python - <<'PYEOF'
+      import pathlib…)
+  ⎿  332:        notes.append(Note(level, f"{p.payment_id} «{p.purpose}» {f
+     mt_ru(p.amount)} в очереди на оплату{target} — "
+  ⎿  Updated candidate-B\DECISIONS.md (+2 -2)
+      106  - остановиться с ошибкой.
+      107  
+      108  Выбрал второй: деньги по договору ушли, и логично зачесть их з
+           а другие работы этого договора. Это выводится в «Проверить».
+      109 -Если выбор неверен, меняется раскладка внутри договора и, возм
+          -ожно, «к оплате сейчас»; «выплачено» и «осталось» по договору 
+          -остаются прежними. На текущих данных ни на что не влияет: таки
+          -х платежей нет.                                               
+      109 +Если выбор неверен: при первом варианте «осталось» по договору
+          + вырастет на излишек, а переплата появится на самой работе; пр
+          +и третьем отчёт по таким данным не построится. На текущих данн
+          +ых ни на что не влияет: таких платежей нет.                   
+      110  
+      111  **10. Сумма договора не равна сумме цен работ.** Варианты:
+      112  - считать от суммы договора;
+     ...
+      141  - Варианты: копейки в `int`, `Decimal` или float.
+      142  - Выбрал `Decimal` с точностью до копейки; float исключён зада
+           нием. Суммы читаются регулярным выражением: до 15 цифр рублей 
+           и не больше двух знаков после точки, иначе ошибка. Форматирова
+           ние отказывается принимать float.
+      143  - Раскладка только складывает и вычитает, без деления, поэтому
+            округлять ничего не нужно.
+      144 -- Если вместо `Decimal` нужны копейки в `int`, меняется только
+          - `money.py`; цифры отчёта останутся теми же, потому что оба сп
+          -особа точные.                                                 
+      144 +- Если вместо `Decimal` нужны копейки в `int`, меняются `money
+          +.py` и типы сумм в моделях и расчёте; цифры отчёта останутся т
+          +еми же, потому что оба способа точные.                        
+      145  
+      146  **15. Кривые данные.**
+      147  - Варианты: пропускать плохие строки с предупреждением или ост
+           анавливаться.
+  ⎿  Updated candidate-B\NOTE.md (+12 -12)
+       1 -# Записка бухгалтеру                                           
+       2 -                                                               
+       3 -По каждой работе в отчёте: цена, сколько выплачено, сколько ост
+         -алось и сколько уже к оплате (работа принята, а деньги не допла
+         -чены). Внизу — итоги по договорам. Те же данные лежат в CSV для
+         - Excel.                                                        
+       4 -Платежи без привязки я засчитываю сначала за принятые работы по
+         - дате приёмки, остаток — авансом за следующие. Очередь в «выпла
+         -чено» не входит. Возвраты не учитываются. События после даты от
+         -чёта перечислены отдельно.                                     
+       5 -На 10.11.2026: «Свет» — выплачено 315 000, осталось 185 000; Пе
+         -тров — выплачено 75 000, осталось 15 000. Долгов за принятые ра
+         -боты нет.                                                      
+       6 -                                                               
+       7 -Пожалуйста, подтвердите:                                       
+       8 -1. Засчитывать общие платежи сначала за принятые работы — верно
+         -, или договаривались иначе (например, 50% на каждую)?          
+       9 -2. P-3 «Материалы» 15 000 по W-14 — это оплата съёмки, а не ком
+         -пенсация сверх цены?                                           
+      10 -3. Отменённую W-13 (100 000) не платим, и по «Свету» к оплате 5
+         -00 000, а не 600 000?                                          
+      11 -4. После P-4 «Остаток» 150 000 по «Свету» останется 35 000 за W
+         --16 — сумма платежа верная?                                    
+      12 -5. По Петрову с 12.11 переплата 5 000: P-7 «Доплата» сверх дого
+         -вора или лишний P-8?                                           
+       1 +# Записка бухгалтеру                                           
+       2 +                                                               
+       3 +По каждой работе в отчёте: цена, сколько выплачено, сколько ост
+         +алось и сколько уже к оплате (работа принята, а деньги не допла
+         +чены). Внизу — итоги по договорам. Те же данные лежат в CSV для
+         + Excel.                                                        
+       4 +Платежи без привязки я засчитываю сначала за принятые работы по
+         + дате приёмки, остаток — авансом за следующие. Очередь в «выпла
+         +чено» не входит. Возвраты не учитываются. События после даты от
+         +чёта перечислены отдельно.                                     
+       5 +На 10.11.2026: «Свет» — выплачено 315 000, осталось 185 000; Пе
+         +тров — выплачено 75 000, осталось 15 000. Долгов за принятые ра
+         +боты нет.                                                      
+       6 +                                                               
+       7 +Пожалуйста, подтвердите:                                       
+       8 +1. Засчитывать общие платежи сначала за принятые работы — верно
+         +, или договаривались иначе (например, 50% на каждую)?          
+       9 +2. P-3 «Материалы для съёмки» 15 000 по W-14 — это оплата съёмк
+         +и, а не компенсация сверх цены?                                
+      10 +3. Отменённую W-13 (100 000) не платим, и по «Свету» к оплате 5
+         +00 000, а не 600 000?                                          
+      11 +4. После P-4 «Остаток» 150 000 по «Свету» останется 35 000 за W
+         +-16 — сумма платежа верная?                                    
+      12 +5. По Петрову с 12.11 переплата 5 000: P-7 «Доплата» сверх дого
+         +вора или лишний P-8?                                           
+  ⎿  Updated candidate-B\advance_report\loader.py (+1 -1)
+      113                  rows.append((where, row))
+      114              return rows
+      115      except UnicodeDecodeError:
+      116 -        errors.add(path.name, "файл не в кодировке UTF-8 — пер
+          -есохраните его как «CSV UTF-8»")                              
+      116 +        errors.add(path.name, "файл не в кодировке UTF-8 — отк
+          +ройте его в Блокноте и сохраните в UTF-8 (не через Excel: он п
+          +оменяет разделитель и запятые в суммах)")                     
+      117      except OSError as exc:
+      118          errors.add(path.name, f"не удалось прочитать файл: {ex
+           c.strerror or exc}")
+      119      return None
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(candidate-B\advance_report\calc.py)
+  ⎿  Added 6 lines, removed 3 lines
+      328                                      f"работы, а не компенсация
+            расходов сверх цены"))
+      329      for p in queued:
+      330          target = f" (привязан к {p.work_id})" if p.work_id els
+           e ""
+      331 -        level = WARN if p.work_id and p.work_id not in cancell
+          -ed_ids else INFO                                              
+      332 -        notes.append(Note(level, f"{p.payment_id} «{p.purpose}
+          -» {fmt_ru(p.amount)} в очереди на оплату{target} — "          
+      333 -                                f"в «выплачено» не входит"))  
+      331 +        flagged = bool(p.work_id) and p.work_id not in cancell
+          +ed_ids                                                        
+      332 +        ask = (". Подтвердите, что это оплата работы, а не ком
+          +пенсация расходов сверх цены"                                 
+      333 +               if flagged else "")                            
+      334 +        notes.append(Note(WARN if flagged else INFO,          
+      335 +                          f"{p.payment_id} «{p.purpose}» {fmt_
+          +ru(p.amount)} в очереди на оплату{target} — "                 
+      336 +                          f"в «выплачено» не входит{ask}"))   
+      337      for p, excess, reason in first.linked_overflow:
+      338          notes.append(Note(WARN, f"{p.payment_id} привязан к {p
+           .work_id}, но {fmt_ru(excess)} из него "
+      339                                  f"не поместились ({reason}) — 
+           разложены как общий платёж по договору"))
+
+● Bash(cd "D:/Code/games/tz/skyclaw/candidate-B" && sed -i 's/    assert
+      any(n.level == WARN and "P-1" in n.text for n in cr.notes)\n$//'
+      tests/test_calc.py && .venv/S…)
+  ⎿  379 passed in 1.81s
+     warning: LF will be replaced by CRLF in candidate-B/data/FORMAT.md.
+     The file will have its original line endings in your working directory
+     135c987 Ревизия, цикл 2: уточнения в DECISIONS, NOTE и подсказках
+  ⎿  1 file changed (binary, mode only or too large to show)
+  ⎿  Resuming agent a6f01f6
+
+● Все пять мелких замечаний цикла 2 починил и закоммитил, 379 тестов проходят.
+  Для пятого (подсказка про UTF-8) выбрал переформулировку: теперь подсказка
+  советует сохранить файл в Блокноте, а не через Excel. Поддержку файлов с ; и
+  запятыми в суммах добавлять не стал.
+
+  Ревьюер начал цикл 3: проверит правки и ещё раз целиком пройдёт по решению.
+  Доложу, когда закончит.
+
+✻ Churned for 38s · done 3:09 PM
+
+● Agent "High-effort independent code review" finished · 26s
+
+● Цикл ревью 3: завершён, замечаний нет. Цикл ревью закончен, всего было 3
+  цикла.
+
+  ┌──────┬────────────────────┬──────────────────────────────────────────────┐
+  │ Цикл │   Нашёл ревьюер    │                     Итог                     │
+  ├──────┼────────────────────┼──────────────────────────────────────────────┤
+  │ 1    │ 3 важных и 9       │ исправлено всё, кроме транскрипта (его       │
+  │      │ мелких             │ делаешь ты)                                  │
+  ├──────┼────────────────────┼──────────────────────────────────────────────┤
+  │ 2    │ важных нет, 5      │ исправлено всё                               │
+  │      │ мелких             │                                              │
+  ├──────┼────────────────────┼──────────────────────────────────────────────┤
+  │ 3    │ ничего             │ —                                            │
+  └──────┴────────────────────┴──────────────────────────────────────────────┘
+
+  В цикле 3 ревьюер подтвердил, что правки работают, и ещё раз целиком прошёл
+  код и документы: замечаний нет. Он повторил все прежние проверки с
+  испорченными файлами и выводом в NUL, а отчёт на 10.11 не изменился. Все 379
+  тестов проходят. Изменения закоммичены в main, последний коммит 135c987.
+
+  Осталось сделать тебе:
+  1. Выполнить /export в этой сессии и положить файл в candidate-B/transcripts/:
+     README уже указывает эту папку.
+  2. Просмотреть файл перед отправкой. Вырезать можно только ключи и пароли.
+  3. Закоммитить транскрипт и отправить работодателю приватный репозиторий или
+     архив.
+
+✻ Brewed for 10m 2s · done 3:09 PM
+
+> Покажи мне теперь как-то коротко объясни, в чем была суть задания, что ты     
+  сделал, чтобы я тоже понял.                                                   
+
+● Суть задания. Компания заказывает работы у подрядчиков: съёмки, дизайн.
+  Договор заключается на общую сумму сразу за несколько работ. Платят частями:
+  аванс, «остаток», «доплата». Большинство платежей ни к какой конкретной работе
+  не привязаны. Бухгалтеру нужен отчёт на дату: по каждой работе сколько уже
+  заплачено и сколько осталось, и итог по договору. Сейчас она считает это
+  руками и путается.
+
+  Но главная проверка в задании — не программа. Данные специально подсунуты с
+  ловушками, и нужно было заметить каждую:
+  - платёж, который вернули;
+  - платёж, который ещё стоит в очереди и деньги не ушли;
+  - отменённая работа;
+  - события после даты отчёта;
+  - «материалы», привязанные к одной работе;
+  - переплата.
+
+  Бухгалтер в отпуске, спросить некого. Поэтому по каждой ловушке нужно было
+  самим принять решение и записать, почему выбрали так.
+
+  Что я сделал.
+  1. Нашёл ловушки до кода. Расписал 8 неоднозначностей и по каждой дал 2–3
+     варианта. Ты выбрал рекомендованные.
+  2. Программа на Python. Запускается одной командой: python -m advance_report 
+     data 10.11.2026. Печатает отчёт в консоль и сохраняет CSV, который
+     открывается в Excel. Деньги считает точно, до копейки.
+     - Общие платежи раскладывает по очереди: сначала за уже принятые работы,
+       остаток идёт авансом за следующие.
+     - На любую дату восстанавливает картину, какой она была в тот день.
+       Например, на 10.11 работа, принятая 11.11, ещё считается не принятой.
+  3. Результат на 10.11. По студии «Свет» выплачено 315 000, осталось 185 000.
+     По дизайнеру Петрову выплачено 75 000, осталось 15 000. Долгов за уже
+     принятые работы нет.
+  4. Тесты: 379 автоматических проверок. Среди них сверка с моим ручным расчётом
+     по каждой работе и 300 случайных наборов данных, на которых проверяется,
+     что суммы всегда сходятся.
+  5. Документы, которые требует задание:
+     - DECISIONS.md — все решения: варианты, что выбрали и почему, что изменится
+       в цифрах, если выбор неверен;
+     - NOTE.md — записка бухгалтеру на 10 строк: как читать отчёт и 5 вопросов,
+       которые она должна подтвердить;
+     - в README — инструкция, как запустить.
+  6. Независимая проверка. Отдельный агент три раза проверял работу. В первый
+     раз он нашёл реальные недочёты, во второй только мелочи, в третий ничего.
+     Всё найденное исправлено.
+
+  С тебя осталось сделать /export и отправить всё работодателю.
+
+✻ Baked for 10s · done 3:12 PM
+
+> Ну, записку бухгалтеру я бы делал лучше HTML файлом, JS, CSS, там, чтобы она  
+  просто тыкнула, открыла в браузере, у нее открылась, и она там увидела все с  
+  инфографикой. Или думаешь, с MD файлом бухгалтер разберется? И еще мне        
+  распиши, что там за решениями приняли. Какие были, получается, ловушки и      
+  какие решения мы приняли.                                                     
+
+● Я бы не стал так делать, по трём причинам:
+  1. Задание прямо ограничивает формат. Там написано: «записка бухгалтеру на
+     5–10 строк простым языком» и «интерфейс… не нужны». Страница с JS, CSS и
+     графиками выйдет за оба условия. Проверяющий может решить, что ты не
+     читаешь требования, и это опаснее, чем «некрасиво».
+  2. Бухгалтер её прочитает. NOTE.md — это обычный текст, без таблиц и разметки,
+     только нумерованный список. Он нормально открывается в Блокноте, а на
+     GitHub или в редакторе выглядит аккуратно.
+  3. Наглядная часть для бухгалтера уже есть. Это сам отчёт в CSV: двойной
+     щелчок, и он открывается в Excel с правильными числами и кириллицей.
+
+  Если очень хочется наглядности, разумнее добавить в программу флаг --html,
+  который сохранит отчёт таблицей для браузера. Тогда в README и DECISIONS это
+  нужно подать как дополнение сверх задания. И учти твоё собственное правило из
+  CLAUDE.md: инфографику мы не рисуем кодом, её заказывают у ChatGPT. Так что
+  графики я бы не делал. Решать тебе.
+
+  Ловушки и решения
+
+  #: 1
+  Ловушка в данных: Большинство платежей не привязаны к работе: непонятно, за
+  что
+    заплачено
+  Что решили: Сначала идут платежи с привязкой. Затем общие деньги закрывают
+    принятые работы по дате приёмки, остаток уходит авансом на следующие
+  Почему: Так обычно и засчитывают аванс, и это легко проверить руками
+  ────────────────────────────────────────
+  #: 2
+  Ловушка в данных: P-2 на 50 000 ушёл и вернулся
+  Что решили: Считается выплаченным только между датой оплаты и датой возврата
+  Почему: Отчёт строится на дату. На 05.09 деньги правда были у подрядчика
+  ────────────────────────────────────────
+  #: 3
+  Ловушка в данных: P-4 на 150 000 стоит в очереди, деньги не ушли
+  Что решили: В «выплачено» не входит, показан отдельной колонкой «в очереди»
+  Почему: Деньги ещё не ушли, но бухгалтеру видно, что останется после оплаты
+  ────────────────────────────────────────
+  #: 4
+  Ловушка в данных: W-13 отменена, а сумма договора 600 000 её включает
+  Что решили: Отменённая работа в расчёт не входит. По «Свету» к оплате 500 000
+  Почему: Отменённую работу не оплачивают
+  ────────────────────────────────────────
+  #: 5
+  Ловушка в данных: W-23 принята 11.11, P-8 ушёл 12.11 — уже после даты отчёта
+    10.11
+  Что решили: Картина восстанавливается на дату: на 10.11 работа не принята,
+    платёжа ещё нет
+  Почему: Статусы в выгрузке «на сейчас», а отчёт нужен на конкретную дату
+  ────────────────────────────────────────
+  #: 6
+  Ловушка в данных: Платёж «Материалы для съёмки» на 15 000 привязан к W-14
+  Что решили: Засчитан в цену W-14, с пометкой «подтвердить»
+  Почему: Платёж идёт по договору. Если это компенсация сверх цены, бухгалтер
+    скажет
+  ────────────────────────────────────────
+  #: 7
+  Ловушка в данных: Петрову выплачено 95 000 при договоре 90 000 (видно с 12.11)
+  Что решили: На работы больше цены не засчитывается. Излишек показан как
+    «переплата» по договору и попадает в «проверить»
+  Почему: Непонятно, что лишнее: «Доплата» или задвоенный «Остаток». Гадать не
+    стали
+  ────────────────────────────────────────
+  #: 8
+  Ловушка в данных: Что значит «осталось оплатить»: за всё или только за
+  сданное?
+  Что решили: Даём оба: «осталось» по всем работам и «к оплате сейчас» только за
+
+    принятые
+  Почему: Бухгалтеру нужны оба числа
+
+  Ещё в DECISIONS есть 9 технических решений. Главные из них:
+  - деньги считаются только в Decimal, без float;
+  - на кривых данных программа останавливается с понятным списком ошибок, а не
+    считает молча;
+  - CSV сохраняется в формате под русский Excel;
+  - дату можно писать как 10.11.2026.
+
+  Вопросы бухгалтеру в NOTE.md — это пять самых спорных пунктов из таблицы: 1,
+  6, 4, 3 и 7. Если она ответит иначе, в DECISIONS уже посчитано, какие цифры
+  изменятся.
+
+✻ Brewed for 19s · done 3:14 PM
+
+> Ну вот и хорошо. Хорошо, что ты сделал за меня работу правильно. Хорошо, что  
+  ты не стал делать инфографику, как я попросил, потому что задание этого не    
+  требует. Молодец, что остановил. Ничего мы делать не будем. Остаемся в рамках 
+  задания. Ловушки решения посмотрел. Отлично. Ну все, я тогда пошел делать     
+  экспорт. Молодец.                                                             
+
+  Listed 1 directory, wrote 2 memories (ctrl+o to expand)
+
+● Спасибо! Запомнил: в заданиях на оценку я держусь рамок задания и говорю, если
+  предложенное дополнение выходит за них.
+
+  После экспорта осталось три шага:
+  1. Положить файл в candidate-B/transcripts/.
+  2. Просмотреть его. Вырезать разрешено только ключи и пароли.
+  3. Закоммитить и отправить репозиторий или архив. Папка .venv в git не
+     попадает, её удалять не нужно.
+
+  Удачи с заданием!
+
+✻ Churned for 14s · done 3:16 PM
