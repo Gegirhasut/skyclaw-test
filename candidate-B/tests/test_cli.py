@@ -120,3 +120,20 @@ def test_contract_without_works(make_data, capsys):
                                  "signed_at": "2026-01-01"}])
     assert main([str(path), "2026-11-10", "--no-csv"]) == 0
     assert "Работ по договору нет." in capsys.readouterr().out
+
+
+def test_out_pointing_to_file_is_clear_error(real_data, tmp_path, capsys):
+    target = tmp_path / "file.txt"
+    target.write_text("x", encoding="utf-8")
+    assert main([str(real_data), "2026-11-10", "--out", str(target)]) == 4
+    assert "Не удалось сохранить CSV" in capsys.readouterr().err
+
+
+def test_output_to_devnull_does_not_crash(real_data, tmp_path):
+    # На Windows NUL выдаёт себя за терминал — раньше это роняло вывод кириллицы.
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")}
+    result = subprocess.run(
+        [sys.executable, "-m", "advance_report", str(real_data), "10.11.2026", "--out", str(tmp_path)],
+        cwd=PROJECT, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")

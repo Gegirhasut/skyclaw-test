@@ -27,6 +27,7 @@ from .models import (
     PAY_REFUNDED,
     WORK_CANCELLED,
     WORK_DONE,
+    WORK_PLANNED,
     Contract,
     Dataset,
     Payment,
@@ -35,10 +36,10 @@ from .models import (
 )
 from .money import ZERO, fmt_ru
 
-# Состояния на дату отчёта.
-DONE = "done"
-PLANNED = "planned"
-CANCELLED = "cancelled"
+# Состояния работы на дату отчёта — те же значения, что статусы в выгрузке.
+DONE = WORK_DONE
+PLANNED = WORK_PLANNED
+CANCELLED = WORK_CANCELLED
 
 PAID = "paid"
 QUEUED = "queued"
@@ -138,7 +139,7 @@ class Report:
     contracts: list[ContractReport]
 
 
-def d(value: date) -> str:
+def fmt_date(value: date) -> str:
     return value.strftime("%d.%m.%Y")
 
 
@@ -149,7 +150,7 @@ def work_state_on(work: Work, as_of: date) -> tuple[str, date | None, Note | Non
     if work.status == WORK_CANCELLED:
         if work.cancelled_at <= as_of:
             return CANCELLED, None, None
-        note = Note(LATER, f"{work.work_id} отменена {d(work.cancelled_at)} — после даты отчёта, "
+        note = Note(LATER, f"{work.work_id} отменена {fmt_date(work.cancelled_at)} — после даты отчёта, "
                           f"на дату она ещё действует")
         if work.completed_at and work.completed_at <= as_of:
             return DONE, work.completed_at, note
@@ -157,7 +158,7 @@ def work_state_on(work: Work, as_of: date) -> tuple[str, date | None, Note | Non
     if work.status == WORK_DONE:
         if work.completed_at <= as_of:
             return DONE, work.completed_at, None
-        return PLANNED, None, Note(LATER, f"{work.work_id} принята {d(work.completed_at)} — после даты "
+        return PLANNED, None, Note(LATER, f"{work.work_id} принята {fmt_date(work.completed_at)} — после даты "
                                          f"отчёта, на дату она ещё не принята")
     return PLANNED, None, None
 
@@ -168,20 +169,20 @@ def payment_state_on(p: Payment, as_of: date) -> tuple[str | None, Note | None]:
     if p.status == PAY_QUEUED:
         if p.created_at <= as_of:
             return QUEUED, None
-        return NOT_YET, Note(LATER, f"{label} заведён {d(p.created_at)} — после даты отчёта, не учтён")
+        return NOT_YET, Note(LATER, f"{label} заведён {fmt_date(p.created_at)} — после даты отчёта, не учтён")
 
     # paid или refunded: деньги уходили p.paid_at
     if p.paid_at <= as_of:
         if p.status == PAY_REFUNDED:
             if p.refunded_at <= as_of:
                 return REFUNDED, None
-            return PAID, Note(LATER, f"{label} возвращён {d(p.refunded_at)} — после даты отчёта, "
+            return PAID, Note(LATER, f"{label} возвращён {fmt_date(p.refunded_at)} — после даты отчёта, "
                                     f"на дату считается выплаченным")
         return PAID, None
     if p.created_at <= as_of:
-        return QUEUED, Note(LATER, f"{label} оплачен {d(p.paid_at)} — после даты отчёта, "
+        return QUEUED, Note(LATER, f"{label} оплачен {fmt_date(p.paid_at)} — после даты отчёта, "
                                   f"на дату он был в очереди")
-    return NOT_YET, Note(LATER, f"{label} оплачен {d(p.paid_at)} — после даты отчёта, не учтён")
+    return NOT_YET, Note(LATER, f"{label} оплачен {fmt_date(p.paid_at)} — после даты отчёта, не учтён")
 
 
 # --- раскладка денег по работам ---------------------------------------------
@@ -248,7 +249,7 @@ def _build_contract(contract: Contract, ds: Dataset, as_of: date) -> ContractRep
     cid = contract.contract_id
 
     if contract.signed_at > as_of:
-        notes.append(Note(WARN, f"Договор подписан {d(contract.signed_at)} — позже даты отчёта"))
+        notes.append(Note(WARN, f"Договор подписан {fmt_date(contract.signed_at)} — позже даты отчёта"))
 
     lines: list[WorkLine] = []
     for work in sorted((w for w in ds.works if w.contract_id == cid), key=lambda w: natural_key(w.work_id)):
@@ -307,19 +308,19 @@ def _contract_notes(r: ContractReport, paid, queued, refunded, first: _Allocatio
                                 f"{fmt_ru(amount)}; расчёт ведётся по ценам работ"))
     for w in r.works:
         if w.state == CANCELLED:
-            notes.append(Note(INFO, f"{w.work.work_id} «{w.work.title}» отменена {d(w.work.cancelled_at)}: "
+            notes.append(Note(INFO, f"{w.work.work_id} «{w.work.title}» отменена {fmt_date(w.work.cancelled_at)}: "
                                     f"её цена {fmt_ru(w.work.price)} в расчёт не входит"))
     if r.cancelled_total:
         notes.append(Note(INFO, f"К оплате по договору с учётом отмен — {fmt_ru(r.price_total)} "
                                 f"(сумма договора {fmt_ru(amount)})"))
     for p in refunded:
-        notes.append(Note(INFO, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} ушёл {d(p.paid_at)} "
-                                f"и возвращён {d(p.refunded_at)} — не учитывается"))
+        notes.append(Note(INFO, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} ушёл {fmt_date(p.paid_at)} "
+                                f"и возвращён {fmt_date(p.refunded_at)} — не учитывается"))
     cancelled_ids = {w.work.work_id for w in r.works if w.state == CANCELLED}
     for p in paid:
         if p.paid_at < p.created_at:
-            notes.append(Note(WARN, f"{p.payment_id} ушёл {d(p.paid_at)} — раньше, чем заведён в учёт "
-                                    f"{d(p.created_at)}; считается выплаченным с даты оплаты. Проверьте даты"))
+            notes.append(Note(WARN, f"{p.payment_id} ушёл {fmt_date(p.paid_at)} — раньше, чем заведён в учёт "
+                                    f"{fmt_date(p.created_at)}; считается выплаченным с даты оплаты. Проверьте даты"))
         # О привязке к отменённой работе предупреждает примечание о переносе в общие деньги ниже.
         if p.work_id and p.work_id not in cancelled_ids:
             notes.append(Note(WARN, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} привязан к "
@@ -327,7 +328,8 @@ def _contract_notes(r: ContractReport, paid, queued, refunded, first: _Allocatio
                                     f"работы, а не компенсация расходов сверх цены"))
     for p in queued:
         target = f" (привязан к {p.work_id})" if p.work_id else ""
-        notes.append(Note(INFO, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} в очереди на оплату{target} — "
+        level = WARN if p.work_id and p.work_id not in cancelled_ids else INFO
+        notes.append(Note(level, f"{p.payment_id} «{p.purpose}» {fmt_ru(p.amount)} в очереди на оплату{target} — "
                                 f"в «выплачено» не входит"))
     for p, excess, reason in first.linked_overflow:
         notes.append(Note(WARN, f"{p.payment_id} привязан к {p.work_id}, но {fmt_ru(excess)} из него "

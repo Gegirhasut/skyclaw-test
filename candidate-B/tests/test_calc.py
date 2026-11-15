@@ -289,3 +289,16 @@ def test_linked_to_cancelled_work_has_no_contradicting_note():
     texts = [n.text for n in cr.notes]
     assert not any("засчитан в её цену" in t for t in texts)
     assert any("не поместились" in t for t in texts)
+
+
+def test_queued_linked_payment_is_flagged():
+    cr = one([work("W-1", "100.00")], [pay("P-1", "10.00", "queued", work_id="W-1")])
+    assert any(n.level == WARN and "P-1" in n.text for n in cr.notes)
+
+
+def test_accepted_then_cancelled_work():
+    w = work("W-1", "100.00", "cancelled", completed=date(2026, 3, 1), cancelled=date(2026, 4, 1))
+    before = one([w], [], as_of=date(2026, 3, 15)).works[0]
+    after = one([w], [], as_of=date(2026, 4, 1)).works[0]
+    assert (before.state, before.due_now) == (DONE, M("100.00"))
+    assert (after.state, after.price) == (CANCELLED, M("0.00"))

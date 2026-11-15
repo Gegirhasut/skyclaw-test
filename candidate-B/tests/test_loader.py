@@ -134,3 +134,44 @@ def test_ragged_row(make_data):
 def test_natural_key():
     assert sorted(["W-10", "W-9", "W-100", "W-2"], key=natural_key) == ["W-2", "W-9", "W-10", "W-100"]
     assert sorted(["A", "W-1", "1"], key=natural_key)  # разные форматы не падают
+
+
+# --- регрессии ревизии, цикл 1 ---------------------------------------------------
+
+def test_cp1251_file_gives_clear_error(make_data):
+    path = make_data(contracts=[C1])
+    text = (path / "contracts.csv").read_text(encoding="utf-8")
+    (path / "contracts.csv").write_bytes(text.encode("cp1251"))
+    errors = errors_of(path)
+    assert any("не в кодировке UTF-8" in e for e in errors)
+    assert not any("не найден в contracts.csv" in e for e in errors)  # без каскада
+
+
+def test_semicolon_delimiter_hint_without_cascade(make_data):
+    path = make_data(
+        contracts=[C1],
+        works=[{"work_id": "W-1", "contract_id": "D-1", "price": "1.00", "status": "planned"}],
+        payments=[{"payment_id": "P-1", "contract_id": "D-1", "amount": "1.00", "status": "queued",
+                   "created_at": "2026-01-01"}],
+    )
+    text = (path / "contracts.csv").read_text(encoding="utf-8")
+    (path / "contracts.csv").write_text(text.replace(",", ";"), encoding="utf-8")
+    errors = errors_of(path)
+    assert len(errors) == 1 and "разделитель «;»" in errors[0]
+
+
+def test_bad_work_row_does_not_cascade_to_payments(make_data):
+    path = make_data(
+        contracts=[C1],
+        works=[{"work_id": "W-1", "contract_id": "D-1", "price": "abc", "status": "planned"}],
+        payments=[{"payment_id": f"P-{i}", "contract_id": "D-1", "work_id": "W-1", "amount": "1.00",
+                   "status": "queued", "created_at": "2026-01-01"} for i in range(3)],
+    )
+    errors = errors_of(path)
+    assert len(errors) == 1 and "price" in errors[0]
+
+
+@pytest.mark.parametrize("amount", ["1" * 16, "1" * 30 + ".00", "١٠٠.00"])
+def test_huge_or_non_ascii_amount_rejected(make_data, amount):
+    path = make_data(contracts=[dict(C1, amount=amount)])
+    assert any("некорректная сумма" in e for e in errors_of(path))

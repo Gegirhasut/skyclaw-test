@@ -6,30 +6,33 @@ import csv
 from decimal import Decimal
 from pathlib import Path
 
-from .calc import CANCELLED, DONE, INFO, LATER, WARN, ContractReport, Report, WorkLine, d
+from .calc import CANCELLED, DONE, INFO, LATER, PLANNED, WARN, ContractReport, Report, WorkLine, fmt_date
 from .money import ZERO, fmt_csv, fmt_ru
 
-STATE_LABELS = {DONE: "принята", "planned": "запланирована", CANCELLED: "отменена"}
+STATE_LABELS = {DONE: "принята", PLANNED: "запланирована", CANCELLED: "отменена"}
 NOTE_TITLES = {
     WARN: "Проверить",
     INFO: "Пояснения",
-    LATER: "После даты отчёта (в расчёт не вошло)",
+    LATER: "События после даты отчёта (на дату не учтены)",
 }
 NOTE_CSV_LABELS = {WARN: "проверить", INFO: "пояснение", LATER: "после даты отчёта"}
 
 
 def state_label(w: WorkLine) -> str:
     if w.state == DONE:
-        return f"принята {d(w.completed_at)}"
+        return f"принята {fmt_date(w.completed_at)}"
     if w.state == CANCELLED:
-        return f"отменена {d(w.work.cancelled_at)}"
+        return f"отменена {fmt_date(w.work.cancelled_at)}"
     return STATE_LABELS[w.state]
 
 
 # --- консоль --------------------------------------------------------------------
 
-def _table(header: list[str], rows: list[list[str]], numeric_from: int) -> list[str]:
-    widths = [max(len(r[i]) for r in [header] + rows) for i in range(len(header))]
+def _table(header: list[str], rows: list[list[str]], numeric_from: int,
+           total: list[str] | None = None) -> list[str]:
+    """Таблица с выравниванием; total — итоговая строка под чертой."""
+    widths = [max(len(r[i]) for r in [header] + rows + ([total] if total else []))
+              for i in range(len(header))]
 
     def line(cells: list[str]) -> str:
         parts = [c.rjust(widths[i]) if i >= numeric_from else c.ljust(widths[i]) for i, c in enumerate(cells)]
@@ -37,10 +40,9 @@ def _table(header: list[str], rows: list[list[str]], numeric_from: int) -> list[
 
     sep = "  ".join("-" * w for w in widths)
     out = [line(header), sep]
-    body, total = (rows[:-1], rows[-1:]) if rows and rows[-1][0] == "Итого" else (rows, [])
-    out += [line(r) for r in body]
+    out += [line(r) for r in rows]
     if total:
-        out += [sep, line(total[0])]
+        out += [sep, line(total)]
     return out
 
 
@@ -50,7 +52,7 @@ def _money_or_dash(w: WorkLine, value: Decimal) -> str:
 
 def render_console(report: Report) -> str:
     out = [
-        f"ОТЧЁТ ОБ ОПЛАТЕ РАБОТ НА {d(report.as_of)}",
+        f"ОТЧЁТ ОБ ОПЛАТЕ РАБОТ НА {fmt_date(report.as_of)}",
         "Суммы в рублях. «Выплачено» — деньги, которые ушли подрядчику к дате отчёта и не вернулись.",
         "«К оплате сейчас» — долг за уже принятые работы. «В очереди» — платежи, которые ещё не ушли.",
         "Цена в скобках — работа отменена, в итоги не входит.",
@@ -65,7 +67,7 @@ def render_console(report: Report) -> str:
 
 def _render_contract(cr: ContractReport) -> list[str]:
     c = cr.contract
-    out = [f"Договор {c.contract_id} · {c.contractor} · подписан {d(c.signed_at)} · "
+    out = [f"Договор {c.contract_id} · {c.contractor} · подписан {fmt_date(c.signed_at)} · "
            f"сумма договора {fmt_ru(c.amount)}"]
     header = ["Работа", "Название", "Статус на дату", "Цена", "Выплачено", "Осталось",
               "К оплате сейчас", "В очереди"]
@@ -78,10 +80,10 @@ def _render_contract(cr: ContractReport) -> list[str]:
             _money_or_dash(w, w.due_now), _money_or_dash(w, w.queued),
         ])
     # Итог строки — сумма колонки; переплата и излишек очереди показаны отдельной строкой ниже.
-    rows.append(["Итого", "без отменённых", "", fmt_ru(cr.price_total), fmt_ru(cr.paid_to_works),
-                 fmt_ru(cr.remaining), fmt_ru(cr.due_now), fmt_ru(cr.queued_to_works)])
+    total = ["Итого", "без отменённых", "", fmt_ru(cr.price_total), fmt_ru(cr.paid_to_works),
+             fmt_ru(cr.remaining), fmt_ru(cr.due_now), fmt_ru(cr.queued_to_works)]
     if cr.works:
-        out += ["  " + line for line in _table(header, rows, numeric_from=3)]
+        out += ["  " + line for line in _table(header, rows, numeric_from=3, total=total)]
     else:
         out.append("  Работ по договору нет.")
 
@@ -109,9 +111,8 @@ def _render_summary(report: Report) -> list[str]:
     rows = [[cr.contract.contract_id, cr.contract.contractor, fmt_ru(cr.contract.amount),
              fmt_ru(cr.price_total), fmt_ru(cr.paid_total), fmt_ru(cr.remaining), fmt_ru(cr.due_now),
              fmt_ru(cr.queued_total), fmt_ru(cr.overpaid)] for cr in report.contracts]
-    if report.contracts:
-        rows.append(["Итого", "", *[fmt_ru(v) for v in _totals(report)]])
-    return ["ИТОГИ ПО ДОГОВОРАМ"] + _table(header, rows, numeric_from=2)
+    total = ["Итого", "", *[fmt_ru(v) for v in _totals(report)]] if report.contracts else None
+    return ["ИТОГИ ПО ДОГОВОРАМ"] + _table(header, rows, numeric_from=2, total=total)
 
 
 def _totals(report: Report) -> list[Decimal]:
@@ -135,7 +136,7 @@ WORK_HEADER = ["Дата отчёта", "Договор", "Подрядчик", 
                "в т.ч. из общих денег договора", "Осталось оплатить", "К оплате сейчас", "В очереди",
                "Останется после очереди"]
 CONTRACT_HEADER = ["Дата отчёта", "Договор", "Подрядчик", "Сумма договора", "Сумма цен работ",
-                   "Отменено работ на", "Цена работ к оплате", "Выплачено", "Выплачено в счёт работ",
+                   "Цена отменённых работ", "Цена работ к оплате", "Выплачено", "Выплачено в счёт работ",
                    "Переплата", "Осталось оплатить", "К оплате сейчас", "В очереди",
                    "Останется после очереди", "Излишек очереди", "Возвращено подрядчиком"]
 NOTE_HEADER = ["Дата отчёта", "Договор", "Тип", "Текст"]
@@ -159,9 +160,9 @@ def write_csv(report: Report, out_dir: Path, fmt: str = "excel") -> list[Path]:
         return fmt_csv(value, spec["decimal_comma"])
 
     def dt(value) -> str:
-        return d(value) if value else ""
+        return fmt_date(value) if value else ""
 
-    as_of = d(report.as_of)
+    as_of = fmt_date(report.as_of)
     works_rows, contract_rows, note_rows = [], [], []
     for cr in report.contracts:
         c = cr.contract

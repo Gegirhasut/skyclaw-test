@@ -12,7 +12,7 @@ from .calc import InvariantError, build_report
 from .loader import DataError, load_dataset
 from .report import CSV_FORMATS, render_console, write_csv
 
-EXIT_OK, EXIT_DATA, EXIT_USAGE, EXIT_INTERNAL = 0, 1, 2, 3
+EXIT_OK, EXIT_DATA, EXIT_USAGE, EXIT_INTERNAL, EXIT_OUTPUT = 0, 1, 2, 3, 4
 
 
 def parse_report_date(text: str) -> date:
@@ -44,10 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _utf8_streams() -> None:
-    # В файл или пайп Windows-Python пишет в кодировке ANSI (cp1251/cp1252) и падает
-    # на «»— и кириллице. Консоль и так работает в Unicode; остальное — в UTF-8.
+    # В файл, пайп или NUL Windows-Python пишет в кодировке ANSI (cp1251/cp1252) и падает
+    # на «»— и кириллице. Консоль Windows и так работает в UTF-8 — её не трогаем.
     for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure") and not stream.isatty():
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if hasattr(stream, "reconfigure") and encoding != "utf8":
             stream.reconfigure(encoding="utf-8")
 
 
@@ -71,7 +72,11 @@ def main(argv: list[str] | None = None) -> int:
 
     sys.stdout.write(render_console(report))
     if not args.no_csv:
-        paths = write_csv(report, args.out, args.csv_format)
+        try:
+            paths = write_csv(report, args.out, args.csv_format)
+        except OSError as exc:
+            print(f"\nНе удалось сохранить CSV в {args.out}: {exc.strerror or exc}", file=sys.stderr)
+            return EXIT_OUTPUT
         print("\nCSV сохранены:")
         for path in paths:
             print(f"  {path}")

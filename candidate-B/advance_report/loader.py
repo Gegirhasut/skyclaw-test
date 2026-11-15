@@ -85,28 +85,38 @@ class _Collector:
             self.add(where, f"{column} заполнено ({row[column].strip()}), но {reason}")
 
 
-def _read_rows(path: Path, columns: tuple[str, ...], errors: _Collector) -> list[tuple[str, dict]]:
+def _read_rows(path: Path, columns: tuple[str, ...], errors: _Collector) -> list[tuple[str, dict]] | None:
+    """Строки файла или None, если файл целиком не читается."""
     if not path.is_file():
         errors.add(path.name, "файл не найден")
-        return []
-    # utf-8-sig: выгрузку могли пересохранить в Excel с BOM.
-    with path.open(encoding="utf-8-sig", newline="") as fh:
-        reader = csv.DictReader(fh)
-        header = reader.fieldnames or []
-        missing = [c for c in columns if c not in header]
-        if missing:
-            errors.add(path.name, f"нет колонок: {', '.join(missing)}")
-            return []
-        rows = []
-        for row in reader:
-            where = f"{path.name}, строка {reader.line_num}"
-            if None in row or any(row[c] is None for c in columns):
-                errors.add(where, "число полей не совпадает с заголовком")
-                continue
-            if not any(v.strip() for v in row.values() if isinstance(v, str)):
-                continue  # пустая строка в конце файла
-            rows.append((where, row))
-        return rows
+        return None
+    try:
+        # utf-8-sig: выгрузку могли пересохранить в Excel с BOM.
+        with path.open(encoding="utf-8-sig", newline="") as fh:
+            reader = csv.DictReader(fh)
+            header = reader.fieldnames or []
+            missing = [c for c in columns if c not in header]
+            if missing:
+                hint = ""
+                if len(header) == 1 and ";" in header[0]:
+                    hint = " (похоже, разделитель «;» — нужна запятая, как в исходной выгрузке)"
+                errors.add(path.name, f"нет колонок: {', '.join(missing)}{hint}")
+                return None
+            rows = []
+            for row in reader:
+                where = f"{path.name}, строка {reader.line_num}"
+                if None in row or any(row[c] is None for c in columns):
+                    errors.add(where, "число полей не совпадает с заголовком")
+                    continue
+                if not any(v.strip() for v in row.values() if isinstance(v, str)):
+                    continue  # пустая строка в конце файла
+                rows.append((where, row))
+            return rows
+    except UnicodeDecodeError:
+        errors.add(path.name, "файл не в кодировке UTF-8 — пересохраните его как «CSV UTF-8»")
+    except OSError as exc:
+        errors.add(path.name, f"не удалось прочитать файл: {exc.strerror or exc}")
+    return None
 
 
 def load_dataset(data_dir: str | Path) -> Dataset:
@@ -115,11 +125,21 @@ def load_dataset(data_dir: str | Path) -> Dataset:
     if not data_dir.is_dir():
         raise DataError([f"{data_dir}: папка с данными не найдена"])
 
-    contracts = _load_contracts(_read_rows(data_dir / "contracts.csv", CONTRACT_COLUMNS, errors), errors)
-    works = _load_works(_read_rows(data_dir / "works.csv", WORK_COLUMNS, errors), errors)
-    payments = _load_payments(_read_rows(data_dir / "payments.csv", PAYMENT_COLUMNS, errors), errors)
+    contract_rows = _read_rows(data_dir / "contracts.csv", CONTRACT_COLUMNS, errors)
+    work_rows = _read_rows(data_dir / "works.csv", WORK_COLUMNS, errors)
+    payment_rows = _read_rows(data_dir / "payments.csv", PAYMENT_COLUMNS, errors)
+    contract_ids: set[str] = set()
+    work_ids: set[str] = set()
+    contracts = _load_contracts(contract_rows or [], errors, contract_ids)
+    works = _load_works(work_rows or [], errors, work_ids)
+    payments = _load_payments(payment_rows or [], errors, set())
 
-    _check_links(contracts, works, payments, errors)
+    # Ссылки проверяем только на файлы, которые прочитались: иначе одна ошибка
+    # в заголовке дала бы по «не найден» на каждую строку. Номера строк, которые
+    # не прошли проверку, считаются известными — по ним ошибка уже выдана.
+    _check_links(contracts, works, payments, errors,
+                 known_contracts=contract_ids if contract_rows is not None else None,
+                 known_works=work_ids if work_rows is not None else None)
     if errors.errors:
         raise DataError(errors.errors)
     return Dataset(contracts=contracts, works=works, payments=payments)
@@ -137,8 +157,8 @@ def _id(errors: _Collector, where: str, row: dict, column: str, seen: set[str]) 
     return value
 
 
-def _load_contracts(rows, errors: _Collector) -> list[Contract]:
-    result, seen = [], set()
+def _load_contracts(rows, errors: _Collector, seen: set[str]) -> list[Contract]:
+    result = []
     for where, row in rows:
         cid = _id(errors, where, row, "contract_id", seen)
         amount = errors.money(where, row, "amount")
@@ -148,8 +168,8 @@ def _load_contracts(rows, errors: _Collector) -> list[Contract]:
     return result
 
 
-def _load_works(rows, errors: _Collector) -> list[Work]:
-    result, seen = [], set()
+def _load_works(rows, errors: _Collector, seen: set[str]) -> list[Work]:
+    result = []
     for where, row in rows:
         wid = _id(errors, where, row, "work_id", seen)
         where = f"{where} ({wid})" if wid else where
@@ -182,8 +202,8 @@ def _load_works(rows, errors: _Collector) -> list[Work]:
     return result
 
 
-def _load_payments(rows, errors: _Collector) -> list[Payment]:
-    result, seen = [], set()
+def _load_payments(rows, errors: _Collector, seen: set[str]) -> list[Payment]:
+    result = []
     for where, row in rows:
         pid = _id(errors, where, row, "payment_id", seen)
         where = f"{where} ({pid})" if pid else where
@@ -223,20 +243,22 @@ def _load_payments(rows, errors: _Collector) -> list[Payment]:
 
 
 def _check_links(contracts: list[Contract], works: list[Work], payments: list[Payment],
-                 errors: _Collector) -> None:
-    contract_ids = {c.contract_id for c in contracts}
+                 errors: _Collector, known_contracts: set[str] | None,
+                 known_works: set[str] | None) -> None:
+    """known_* — все номера из файла (None — файл не прочитан, проверку пропускаем)."""
     work_by_id = {w.work_id: w for w in works}
     for w in works:
-        if w.contract_id not in contract_ids:
+        if known_contracts is not None and w.contract_id not in known_contracts:
             errors.add(f"works.csv ({w.work_id})", f"договор {w.contract_id} не найден в contracts.csv")
     for p in payments:
         where = f"payments.csv ({p.payment_id})"
-        if p.contract_id not in contract_ids:
+        if known_contracts is not None and p.contract_id not in known_contracts:
             errors.add(where, f"договор {p.contract_id} не найден в contracts.csv")
         if p.work_id is not None:
             work = work_by_id.get(p.work_id)
             if work is None:
-                errors.add(where, f"работа {p.work_id} не найдена в works.csv")
+                if known_works is not None and p.work_id not in known_works:
+                    errors.add(where, f"работа {p.work_id} не найдена в works.csv")
             elif work.contract_id != p.contract_id:
                 errors.add(where, f"работа {p.work_id} относится к договору {work.contract_id}, "
                                   f"а платёж — к {p.contract_id}")
