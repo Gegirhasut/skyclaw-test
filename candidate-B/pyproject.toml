@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "advance-report"
+version = "1.0.0"
+description = "Отчёт по авансам и оплатам работ по договорам подрядчиков"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+advance-report = "advance_report.cli:main"
+
+[tool.setuptools]
+packages = ["advance_report"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
